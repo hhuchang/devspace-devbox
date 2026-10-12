@@ -165,8 +165,11 @@ import { DevBox } from "devbox-js-sdk";
 
 const client = new DevBox();
 try {
+  const [template] = await client.templates.list();
   const page = await client.sandboxes.list();
-  console.log(page.items, page.total);
+  const sandbox = await client.sandboxes.create(template.templateId);
+  console.log(sandbox.sandboxId, page.total);
+  await sandbox.kill();
 } finally {
   await client.close();
 }

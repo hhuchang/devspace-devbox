@@ -34,6 +34,7 @@ from .models import (
     SandboxInfo,
     SandboxLifecycle,
     SandboxState,
+    TemplateInfo,
 )
 from .sandbox import AsyncSandbox, Sandbox
 
@@ -67,6 +68,7 @@ __all__ = [
     "SandboxLifecycle",
     "SandboxState",
     "ServiceUnavailableError",
+    "TemplateInfo",
     "ValidationError",
     "__version__",
 ]

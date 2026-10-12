@@ -176,8 +176,9 @@ PTY 继承沙箱的语言环境，不强制设置镜像可能未安装的 locale
 from devbox import DevBox
 
 with DevBox() as client:
+    template = client.templates.list()[0]
     page = client.sandboxes.list()
-    sandbox = client.sandboxes.create("default")
+    sandbox = client.sandboxes.create(template.template_id)
     print(sandbox.sandbox_id, len(page.items))
     sandbox.kill()
 ```

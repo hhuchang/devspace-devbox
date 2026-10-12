@@ -39,6 +39,16 @@ export interface SandboxInfoLifecycle {
   autoResume: boolean;
 }
 
+export interface TemplateInfo {
+  templateId: string;
+  name: string;
+  aliases: string[];
+  buildId: string;
+  cpuCount: number;
+  memoryMb: number;
+  diskSizeMb: number;
+}
+
 export interface SandboxInfo {
   sandboxId: string;
   templateId: string;
@@ -141,6 +151,18 @@ export function parseSandboxInfo(value: WireObject): SandboxInfo {
           onTimeout,
         }
       : undefined,
+  };
+}
+
+export function parseTemplateInfo(value: WireObject): TemplateInfo {
+  return {
+    templateId: stringValue(pick(value, "templateId", "templateID", "template_id")),
+    name: stringValue(pick(value, "name")),
+    aliases: stringArray(value.aliases),
+    buildId: stringValue(pick(value, "buildId", "buildID", "build_id")),
+    cpuCount: numberValue(pick(value, "cpuCount")),
+    memoryMb: numberValue(pick(value, "memoryMB", "memoryMb", "memory_mb")),
+    diskSizeMb: numberValue(pick(value, "diskSizeMB", "diskSizeMb", "disk_size_mb")),
   };
 }
 

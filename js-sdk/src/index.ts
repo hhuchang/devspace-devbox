@@ -34,6 +34,7 @@ export {
   type SandboxInfo,
   type SandboxLifecycle,
   SandboxState,
+  type TemplateInfo,
 } from "./models.js";
 export type { PtyStartOptions } from "./pty.js";
 export {

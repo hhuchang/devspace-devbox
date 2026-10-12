@@ -8,6 +8,7 @@ import httpx
 from ._transport import AsyncTransport, SyncTransport
 from .config import ConnectionConfig
 from .sandbox import AsyncSandboxes, Sandboxes
+from .templates import AsyncTemplates, Templates
 
 
 class DevBox:
@@ -45,6 +46,7 @@ class DevBox:
             config.request_timeout,
             gateway_url=config.gateway_url,
         )
+        self.templates = Templates(self._transport)
 
     def close(self) -> None:
         self._transport.close()
@@ -93,6 +95,7 @@ class AsyncDevBox:
             config.request_timeout,
             gateway_url=config.gateway_url,
         )
+        self.templates = AsyncTemplates(self._transport)
 
     async def close(self) -> None:
         await self._transport.close()

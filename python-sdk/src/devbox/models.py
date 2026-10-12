@@ -45,6 +45,31 @@ class SandboxLifecycle:
 
 
 @dataclass(frozen=True, slots=True)
+class TemplateInfo:
+    template_id: str
+    name: str
+    aliases: tuple[str, ...]
+    build_id: str
+    cpu_count: int
+    memory_mb: int
+    disk_size_mb: int
+
+    @classmethod
+    def from_wire(cls, value: Mapping[str, Any]) -> TemplateInfo:
+        return cls(
+            template_id=str(_pick(value, "templateId", "templateID", "template_id")),
+            name=str(_pick(value, "name")),
+            aliases=_string_tuple(value.get("aliases")),
+            build_id=str(_pick(value, "buildId", "buildID", "build_id")),
+            cpu_count=_integer(_pick(value, "cpuCount")),
+            memory_mb=_integer(_pick(value, "memoryMB", "memoryMb", "memory_mb")),
+            disk_size_mb=_integer(
+                _pick(value, "diskSizeMB", "diskSizeMb", "disk_size_mb")
+            ),
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class SandboxInfo:
     sandbox_id: str
     template_id: str
