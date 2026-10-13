@@ -99,7 +99,9 @@ async function validateSandbox(client, sandbox, validator) {
   });
   await validator.verify("manager.refresh", async () => {
     const before = Date.now();
-    await step("sandbox.refresh(300) | reset deadline to now + 300s", () => sandbox.refresh(300));
+    await step("sandbox.refresh(300) | extend deadline to at least now + 300s", () =>
+      sandbox.refresh(300),
+    );
     const info = await step("sandbox.getInfo() | verify the actual deadline", () =>
       sandbox.getInfo(),
     );
@@ -108,7 +110,7 @@ async function validateSandbox(client, sandbox, validator) {
       info.endAt.getTime() < before + 295_000 ||
       info.endAt.getTime() > Date.now() + 305_000
     )
-      throw new Error(`refresh did not reset the deadline: ${info.endAt}`);
+      throw new Error(`refresh did not extend the deadline: ${info.endAt}`);
   });
   const runtime = await validator.verify("runtime.ready", () => waitForRuntime(sandbox));
   if (!runtime) {

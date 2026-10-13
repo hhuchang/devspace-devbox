@@ -17,7 +17,15 @@ from urllib.parse import urlsplit
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "example", choices=("basic", "async_basic", "demo", "validate_full", "stability")
+        "example",
+        choices=(
+            "basic",
+            "async_basic",
+            "demo",
+            "validate_full",
+            "validate_lifecycle",
+            "stability",
+        ),
     )
     parser.add_argument("arguments", nargs=argparse.REMAINDER)
     args = parser.parse_args()

@@ -261,10 +261,13 @@ def validate_git(sandbox: Sandbox, validator: Validator) -> None:
 
 def _validate_refresh(sandbox: Sandbox) -> None:
     before = time.time()
-    _step("sandbox.refresh(300) | reset deadline to now + 300s", lambda: sandbox.refresh(300))
+    _step(
+        "sandbox.refresh(300) | extend deadline to at least now + 300s",
+        lambda: sandbox.refresh(300),
+    )
     info = _step("sandbox.get_info() | verify the actual deadline", sandbox.get_info)
     if info.end_at is None or not before + 295 <= info.end_at.timestamp() <= time.time() + 305:
-        raise AssertionError(f"refresh did not reset the deadline: {info.end_at}")
+        raise AssertionError(f"refresh did not extend the deadline: {info.end_at}")
 
 
 def _validate_terminal_result(result: CommandResult) -> None:
