@@ -10,7 +10,7 @@ from devbox import DevBox, SandboxState
 def main() -> None:
     marker = uuid4().hex
     path = "/tmp/devbox-lifecycle-proof"
-    with DevBox(request_timeout=150) as client:
+    with DevBox() as client:
         sandbox = client.sandboxes.create(
             os.getenv("DEVBOX_TEST_TEMPLATE", "default"),
             timeout=300,

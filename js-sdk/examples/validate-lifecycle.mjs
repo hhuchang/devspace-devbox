@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { setTimeout as sleep } from "node:timers/promises";
 import { DevBox, SandboxState } from "../dist/index.js";
 
-const client = new DevBox({ requestTimeoutMs: 150_000 });
+const client = new DevBox();
 let sandbox;
 try {
   const marker = randomUUID();

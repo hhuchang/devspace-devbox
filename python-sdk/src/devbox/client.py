@@ -23,7 +23,7 @@ class DevBox:
         api_key: str | None = None,
         api_url: str | None = None,
         gateway_url: str | None = None,
-        request_timeout: float = 30.0,
+        request_timeout: float | None = None,
         headers: Mapping[str, str] | None = None,
         http_transport: httpx.BaseTransport | None = None,
     ) -> None:
@@ -38,7 +38,7 @@ class DevBox:
         self._transport = SyncTransport(
             config.api_url,
             headers=request_headers,
-            timeout=config.request_timeout,
+            timeout=config.control_timeout,
             transport=http_transport,
         )
         self.sandboxes = Sandboxes(
@@ -72,7 +72,7 @@ class AsyncDevBox:
         api_key: str | None = None,
         api_url: str | None = None,
         gateway_url: str | None = None,
-        request_timeout: float = 30.0,
+        request_timeout: float | None = None,
         headers: Mapping[str, str] | None = None,
         http_transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
@@ -87,7 +87,7 @@ class AsyncDevBox:
         self._transport = AsyncTransport(
             config.api_url,
             headers=request_headers,
-            timeout=config.request_timeout,
+            timeout=config.control_timeout,
             transport=http_transport,
         )
         self.sandboxes = AsyncSandboxes(

@@ -42,6 +42,17 @@ def test_api_key_is_hidden_from_configuration_repr() -> None:
     assert "devbox_secret" not in repr(config)
 
 
+def test_control_requests_allow_slow_lifecycle_operations() -> None:
+    config = ConnectionConfig.resolve(api_key="secret")
+    assert config.control_timeout == 150
+    assert config.request_timeout == 30
+
+
+def test_explicit_timeout_applies_to_control_and_gateway() -> None:
+    config = ConnectionConfig.resolve(api_key="secret", request_timeout=12)
+    assert config.control_timeout == config.request_timeout == 12
+
+
 def test_plain_http_is_limited_to_local_development() -> None:
     local = ConnectionConfig.resolve(api_key="secret", api_url="http://localhost:8080")
     assert local.api_url == "http://localhost:8080"

@@ -17,6 +17,7 @@ export interface ConnectionConfig {
   apiUrl: string;
   gatewayUrl?: string;
   requestTimeoutMs: number;
+  controlTimeoutMs: number;
   headers: Record<string, string>;
   dispatcher?: Dispatcher;
 }
@@ -50,6 +51,7 @@ export function resolveConfig(options: DevBoxOptions = {}): ConnectionConfig {
     apiUrl,
     gatewayUrl: rawGatewayUrl ? serviceUrl(rawGatewayUrl, "gatewayUrl") : undefined,
     requestTimeoutMs,
+    controlTimeoutMs: options.requestTimeoutMs ?? 150_000,
     headers: { ...options.headers },
     dispatcher: options.dispatcher,
   };

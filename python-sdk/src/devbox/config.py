@@ -32,6 +32,7 @@ class ConnectionConfig:
     api_url: str = DEFAULT_API_URL
     gateway_url: str | None = None
     request_timeout: float = 30.0
+    control_timeout: float = 150.0
     headers: Mapping[str, str] = field(default_factory=dict, repr=False)
 
     @classmethod
@@ -41,7 +42,7 @@ class ConnectionConfig:
         api_key: str | None = None,
         api_url: str | None = None,
         gateway_url: str | None = None,
-        request_timeout: float = 30.0,
+        request_timeout: float | None = None,
         headers: Mapping[str, str] | None = None,
     ) -> ConnectionConfig:
         resolved_key = (
@@ -55,7 +56,7 @@ class ConnectionConfig:
             api_url or os.getenv("DEVBOX_API_URL") or os.getenv("E2B_API_URL") or DEFAULT_API_URL
         )
         resolved_gateway_url = gateway_url or os.getenv("DEVBOX_GATEWAY_URL") or None
-        if request_timeout <= 0:
+        if request_timeout is not None and request_timeout <= 0:
             raise ConfigurationError("request_timeout must be positive")
         return cls(
             api_key=resolved_key,
@@ -63,7 +64,8 @@ class ConnectionConfig:
             gateway_url=(
                 _service_url(resolved_gateway_url, "gateway_url") if resolved_gateway_url else None
             ),
-            request_timeout=request_timeout,
+            request_timeout=30.0 if request_timeout is None else request_timeout,
+            control_timeout=150.0 if request_timeout is None else request_timeout,
             headers=dict(headers or {}),
         )
 

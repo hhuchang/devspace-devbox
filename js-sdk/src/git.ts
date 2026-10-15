@@ -31,7 +31,10 @@ export class Git {
       command.push("--depth", String(options.depth));
     }
     command.push(url, path);
-    return this.#run(command, { ...options, timeoutMs: options.timeoutMs ?? 300_000 });
+    return this.#run(command, {
+      ...options,
+      timeoutMs: options.timeoutMs === undefined ? 300_000 : options.timeoutMs,
+    });
   }
 
   status(repository: string): Promise<CommandResult> {
@@ -65,7 +68,10 @@ export class Git {
   ): Promise<CommandResult> {
     const command = inRepository(repository, "pull", options.remote ?? "origin");
     if (options.branch) command.push(options.branch);
-    return this.#run(command, { ...options, timeoutMs: options.timeoutMs ?? 300_000 });
+    return this.#run(command, {
+      ...options,
+      timeoutMs: options.timeoutMs === undefined ? 300_000 : options.timeoutMs,
+    });
   }
 
   push(
@@ -74,7 +80,10 @@ export class Git {
   ): Promise<CommandResult> {
     const command = inRepository(repository, "push", options.remote ?? "origin");
     if (options.branch) command.push(options.branch);
-    return this.#run(command, { ...options, timeoutMs: options.timeoutMs ?? 300_000 });
+    return this.#run(command, {
+      ...options,
+      timeoutMs: options.timeoutMs === undefined ? 300_000 : options.timeoutMs,
+    });
   }
 
   setConfig(repository: string, key: string, value: string): Promise<CommandResult> {

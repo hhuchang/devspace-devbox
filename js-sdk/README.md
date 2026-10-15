@@ -78,7 +78,7 @@ try {
 
 沙箱生命周期的 `timeout`、`duration` 以秒为单位；命令、Git 和请求配置中的
 `timeoutMs`、`requestTimeoutMs` 以毫秒为单位。
-普通 HTTP 请求默认 `requestTimeoutMs=30000`，命令执行/重连默认 `timeoutMs=60000`，
+Manager 请求默认等待 150000 毫秒，数据面普通 HTTP 请求默认等待 30000 毫秒；显式设置 `requestTimeoutMs` 时，两者都使用指定值。命令执行/重连默认 `timeoutMs=60000`，
 Git 的 clone/pull/push 默认 `timeoutMs=300000`。PTY 和目录监听不设总时限，完成交互后需关闭句柄或迭代器；
 关闭 Sandbox 会中止它的数据面流。调用方传入的自定义 dispatcher 由调用方负责关闭。
 `DevBox.close()` 只关闭管理面连接；通过它获取的 Sandbox 需要分别 `close()`。
@@ -94,7 +94,7 @@ Git 的 clone/pull/push 默认 `timeoutMs=300000`。PTY 和目录监听不设总
 `autoResume: true` 允许兼容的 Gateway 在首次数据面请求到达时唤醒沙箱；显式 `connect()`/`resume()` 始终可用。
 SDK 会在 `connectToken` 到期前通过 Manager 静默更新连接凭证，不延长沙箱生命周期，用户无需管理 Token。
 仅文件系统快照暂不开放。
-快照操作可能较慢，可在创建客户端时设置 `requestTimeoutMs: 150000`；该值不改变沙箱生存时间。
+请求超时不改变沙箱生存时间，也不能覆盖服务器入口代理的超时限制。
 
 部署新版 Manager 后，使用现有连接环境变量运行生命周期验证（只创建并清理一个沙箱）：
 
@@ -182,7 +182,7 @@ try {
 | API Key | `DEVBOX_API_KEY` 或 `E2B_API_KEY` | 必填 |
 | 管理面地址 | `DEVBOX_API_URL` 或 `E2B_API_URL` | `https://devbox.developer.myhuaweicloud.com` |
 | 数据面地址覆盖 | `DEVBOX_GATEWAY_URL` | Manager 返回的地址 |
-| 请求超时 | `requestTimeoutMs` | 30000 毫秒 |
+| 请求超时 | `requestTimeoutMs` | Manager 150000 毫秒，数据面 30000 毫秒；显式指定时统一使用该值 |
 
 构造参数优先于环境变量。API Key 只发送给管理面，Manager 返回的 `connectToken` 只发送给数据面，使用 `Cookie: relay_token=<connectToken>`。SDK 不持久化凭证，也不会把凭证跟随重定向发送到其他地址。
 

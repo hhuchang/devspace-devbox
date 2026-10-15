@@ -236,7 +236,7 @@ class Sandbox:
         api_key: str | None = None,
         api_url: str | None = None,
         gateway_url: str | None = None,
-        request_timeout: float = 30.0,
+        request_timeout: float | None = None,
         headers: Mapping[str, str] | None = None,
     ) -> Sandbox:
         """Create a sandbox and connect its runtime APIs."""
@@ -275,7 +275,7 @@ class Sandbox:
         api_key: str | None = None,
         api_url: str | None = None,
         gateway_url: str | None = None,
-        request_timeout: float = 30.0,
+        request_timeout: float | None = None,
         headers: Mapping[str, str] | None = None,
     ) -> Sandbox:
         """Fetch Gateway credentials; this does not itself open a data connection."""
@@ -473,7 +473,7 @@ class AsyncSandbox:
         api_key: str | None = None,
         api_url: str | None = None,
         gateway_url: str | None = None,
-        request_timeout: float = 30.0,
+        request_timeout: float | None = None,
         headers: Mapping[str, str] | None = None,
     ) -> AsyncSandbox:
         """Create a sandbox and connect its runtime APIs."""
@@ -512,7 +512,7 @@ class AsyncSandbox:
         api_key: str | None = None,
         api_url: str | None = None,
         gateway_url: str | None = None,
-        request_timeout: float = 30.0,
+        request_timeout: float | None = None,
         headers: Mapping[str, str] | None = None,
     ) -> AsyncSandbox:
         """Fetch Gateway credentials; this does not itself open a data connection."""
@@ -665,7 +665,7 @@ def _sync_control(
     api_key: str | None,
     api_url: str | None,
     gateway_url: str | None,
-    request_timeout: float,
+    request_timeout: float | None,
     headers: Mapping[str, str] | None,
 ) -> tuple[ConnectionConfig, SyncTransport]:
     config = ConnectionConfig.resolve(
@@ -678,7 +678,7 @@ def _sync_control(
     return config, SyncTransport(
         config.api_url,
         headers={**config.headers, "X-API-Key": config.api_key},
-        timeout=config.request_timeout,
+        timeout=config.control_timeout,
     )
 
 
@@ -686,7 +686,7 @@ def _async_control(
     api_key: str | None,
     api_url: str | None,
     gateway_url: str | None,
-    request_timeout: float,
+    request_timeout: float | None,
     headers: Mapping[str, str] | None,
 ) -> tuple[ConnectionConfig, AsyncTransport]:
     config = ConnectionConfig.resolve(
@@ -699,7 +699,7 @@ def _async_control(
     return config, AsyncTransport(
         config.api_url,
         headers={**config.headers, "X-API-Key": config.api_key},
-        timeout=config.request_timeout,
+        timeout=config.control_timeout,
     )
 
 

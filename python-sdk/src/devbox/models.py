@@ -63,9 +63,7 @@ class TemplateInfo:
             build_id=str(_pick(value, "buildId", "buildID", "build_id")),
             cpu_count=_integer(_pick(value, "cpuCount")),
             memory_mb=_integer(_pick(value, "memoryMB", "memoryMb", "memory_mb")),
-            disk_size_mb=_integer(
-                _pick(value, "diskSizeMB", "diskSizeMb", "disk_size_mb")
-            ),
+            disk_size_mb=_integer(_pick(value, "diskSizeMB", "diskSizeMb", "disk_size_mb")),
         )
 
 

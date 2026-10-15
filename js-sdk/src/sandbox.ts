@@ -364,7 +364,7 @@ function sandboxPayload(value: unknown): [SandboxInfo, SandboxConnection] {
 function controlTransport(config: ConnectionConfig): Transport {
   return new Transport(config.apiUrl, {
     headers: { ...config.headers, "X-API-Key": config.apiKey },
-    timeoutMs: config.requestTimeoutMs,
+    timeoutMs: config.controlTimeoutMs,
     dispatcher: config.dispatcher,
   });
 }

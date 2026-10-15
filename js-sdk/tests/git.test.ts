@@ -1,5 +1,5 @@
 import type { MockAgent } from "undici";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { Commands } from "../src/commands.js";
 import { Git } from "../src/git.js";
 import { Transport } from "../src/internal/transport.js";
@@ -8,6 +8,28 @@ import { connectBody, mockAgent } from "./helpers.js";
 describe("Git", () => {
   let agent: MockAgent | undefined;
   afterEach(async () => agent?.close());
+
+  it("preserves an explicit unlimited timeout for network operations", async () => {
+    const commands = new Commands(async () => {
+      throw new Error("transport should not be used");
+    });
+    const run = vi.spyOn(commands, "run").mockResolvedValue({
+      pid: 11,
+      exitCode: 0,
+      stdout: "",
+      stderr: "",
+    });
+    const git = new Git(commands);
+    try {
+      await git.clone("https://example.test/repo.git", "/tmp/repo", { timeoutMs: null });
+      await git.pull("/tmp/repo", { timeoutMs: null });
+      await git.push("/tmp/repo", { timeoutMs: null });
+      expect(run).toHaveBeenCalledTimes(3);
+      for (const call of run.mock.calls) expect(call[1]?.timeoutMs).toBeNull();
+    } finally {
+      run.mockRestore();
+    }
+  });
 
   it("passes credentials through environment variables instead of command arguments", async () => {
     agent = mockAgent();

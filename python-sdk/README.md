@@ -86,7 +86,7 @@ with Sandbox.create("default", timeout=300) as sandbox:
 | `sandbox.git` | `clone`、`status`、`checkout`、`add`、`commit`、`pull`、`push`、`set_config` | Git 工作流 |
 
 沙箱生命周期、命令和 Git 操作中的 `timeout`、`duration` 均以秒为单位。
-普通 HTTP 请求默认 `request_timeout=30`，命令执行/重连默认 `timeout=60`，
+Manager 请求默认等待 150 秒，数据面普通 HTTP 请求默认等待 30 秒；显式设置 `request_timeout` 时，两者都使用指定值。命令执行/重连默认 `timeout=60`，
 Git 的 clone/pull/push 默认 `timeout=300`。PTY 和目录监听不设流读取超时，但建立连接、发送请求和
 等待连接池仍受 `request_timeout` 约束。HTTPX 的超时按网络阶段计算，
 不是整个操作的总耗时上限；命令超时还会通过 Connect 协议传递给服务端。
@@ -99,12 +99,12 @@ Git 的 clone/pull/push 默认 `timeout=300`。PTY 和目录监听不设流读�
 暂停保留期为 24 小时，目前仅支持原节点恢复。暂停后要保留沙箱，应调用 `close()`，不要退出会自动 `kill()` 的 Sandbox 上下文。
 已有命令/PTY/监听句柄应在暂停前断开，恢复后按 PID 重新连接或重新建立监听，SDK 不自动重放命令。
 生命周期 timeout 最大为 86400 秒（24 小时）；创建与恢复的正数 timeout 至少为 10 秒。运行后可用
-`set_timeout(5)` 验证短时自动销毁，后台清理最多有约 30 秒延迟。创建时可传
+`set_timeout(10)` 验证短时自动销毁，后台清理最多有约 30 秒延迟。创建时可传
 `lifecycle=SandboxLifecycle(on_timeout="pause", auto_resume=True)`，让超时行为改为内存快照暂停。
 `auto_resume=True` 允许兼容的 Gateway 在首次数据面请求到达时唤醒沙箱；显式 `connect()`/`resume()` 始终可用。
 SDK 会在 `connectToken` 到期前通过 Manager 静默更新连接凭证，不延长沙箱生命周期，用户无需管理 Token。
 仅文件系统快照暂不开放。
-快照操作可能较慢，可在创建客户端时设置 `request_timeout=150`；该值不改变沙箱生存时间。
+请求超时不改变沙箱生存时间，也不能覆盖服务器入口代理的超时限制。
 
 部署新版 Manager 后，使用现有连接环境变量运行生命周期验证（只创建并清理一个沙箱）：
 
@@ -209,7 +209,7 @@ asyncio.run(main())
 | API Key | `DEVBOX_API_KEY` 或 `E2B_API_KEY` | 必填 |
 | 管理面地址 | `DEVBOX_API_URL` 或 `E2B_API_URL` | `https://devbox.developer.myhuaweicloud.com` |
 | 数据面地址覆盖 | `DEVBOX_GATEWAY_URL` | Manager 返回的地址 |
-| 请求超时 | 构造参数 `request_timeout` | 30 秒 |
+| 请求超时 | 构造参数 `request_timeout` | Manager 150 秒，数据面 30 秒；显式指定时统一使用该值 |
 
 构造参数优先于环境变量。API Key 只发送给管理面；Manager 返回的 `connectToken` 只发送给
 数据面，使用 `Cookie: relay_token=<connectToken>`。SDK 不持久化凭证，也不会跟随重定向发送凭证。
