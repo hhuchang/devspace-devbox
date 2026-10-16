@@ -106,10 +106,10 @@ SDK 会在 `connectToken` 到期前通过 Manager 静默更新连接凭证，不
 仅文件系统快照暂不开放。
 请求超时不改变沙箱生存时间，也不能覆盖服务器入口代理的超时限制。
 
-部署新版 Manager 后，使用现有连接环境变量运行生命周期验证（只创建并清理一个沙箱）：
+部署新版 Manager 后，使用现有连接环境变量运行生命周期专项验证：
 
 ```bash
-python examples/validate_lifecycle.py
+python examples/validate_full.py --lifecycle-only
 ```
 
 PyCharm 会根据这些对象和类型标注提供点号补全。例如创建目录使用
@@ -251,16 +251,9 @@ except DevBoxError as error:
 | --- | --- |
 | `examples/basic.py` | 推荐的同步入门路径 |
 | `examples/async_basic.py` | 异步入门路径 |
-| `examples/demo.py` | 七步短演示：模板、创建、命令、文件、stdin、暂停与恢复 |
 | `examples/validate_full.py` | 推荐的完整讲解与验收入口，覆盖当前 Manager 与数据面能力 |
-| `examples/validate_lifecycle.py` | 复用完整验收中的生命周期场景，不重复执行数据面功能巡检 |
 | `examples/stability.py` | 串行批量创建、使用和删除，统计成功率与耗时 |
-
-核心能力演示：
-
-```bash
-python examples/demo.py
-```
+| `examples/run_local.py` | 本地 DNS 覆盖运行工具 |
 
 完整验收按以下顺序执行，结束时删除测试沙箱：
 
@@ -291,7 +284,8 @@ stderr、退出码和耗时，不打印 API Key 或 Token；PTY 控制字符只�
 python examples/run_local.py validate_full
 ```
 
-该入口也支持 `basic`、`async_basic`、`demo`、`validate_lifecycle`。DNS 覆盖仅对当前示例进程和配置的
+该入口也支持 `basic`、`async_basic`、`stability`；只验证生命周期时运行
+`python examples/run_local.py validate_full --lifecycle-only`。DNS 覆盖仅对当前示例进程和配置的
 Gateway 域名生效，保留 HTTPS Host、SNI 和证书校验，不修改系统 hosts。
 Gateway 必须能查询到 Manager 新建的 tunnel；IP 映射不会创建或恢复 tunnel。
 

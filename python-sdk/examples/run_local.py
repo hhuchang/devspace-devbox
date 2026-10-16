@@ -21,9 +21,7 @@ def main() -> None:
         choices=(
             "basic",
             "async_basic",
-            "demo",
             "validate_full",
-            "validate_lifecycle",
             "stability",
         ),
     )

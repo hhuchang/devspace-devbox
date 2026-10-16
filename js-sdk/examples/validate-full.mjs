@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
-import { stripVTControlCharacters } from "node:util";
+import { parseArgs, stripVTControlCharacters } from "node:util";
 import { CommandExitError, DevBox, NotFoundError, SandboxState } from "../dist/index.js";
 
 class Validator {
@@ -28,7 +28,19 @@ class Validator {
   }
 }
 
-export async function main({ lifecycleOnly = false } = {}) {
+export async function main({ args = process.argv.slice(2) } = {}) {
+  const { values } = parseArgs({
+    args,
+    options: {
+      "lifecycle-only": { type: "boolean", default: false },
+      help: { type: "boolean", short: "h" },
+    },
+  });
+  if (values.help) {
+    console.log("Usage: node examples/validate-full.mjs [--lifecycle-only]");
+    return;
+  }
+  const lifecycleOnly = values["lifecycle-only"];
   const template = process.env.DEVBOX_TEST_TEMPLATE || "default";
   const validator = new Validator();
   const client = new DevBox();

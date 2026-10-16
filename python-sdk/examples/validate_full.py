@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import asyncio
 import os
 import re
@@ -747,4 +748,8 @@ def _seconds(started_at: float) -> str:
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="Validate DevBox SDK functionality")
+    parser.add_argument(
+        "--lifecycle-only", action="store_true", help="Run lifecycle scenarios only"
+    )
+    main(lifecycle_only=parser.parse_args().lifecycle_only)

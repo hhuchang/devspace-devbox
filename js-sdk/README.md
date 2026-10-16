@@ -96,11 +96,11 @@ SDK 会在 `connectToken` 到期前通过 Manager 静默更新连接凭证，不
 仅文件系统快照暂不开放。
 请求超时不改变沙箱生存时间，也不能覆盖服务器入口代理的超时限制。
 
-部署新版 Manager 后，使用现有连接环境变量运行生命周期验证（只创建并清理一个沙箱）：
+部署新版 Manager 后，使用现有连接环境变量运行生命周期专项验证：
 
 ```bash
 npm run build
-node examples/validate-lifecycle.mjs
+node examples/validate-full.mjs --lifecycle-only
 ```
 
 编辑器会根据类型声明为这些对象提供点号补全。例如创建目录使用
@@ -222,15 +222,13 @@ try {
 | 入口 | 用途 |
 | --- | --- |
 | `examples/basic.mjs` | 最小入门示例 |
-| `examples/demo.mjs` | 七步短演示：模板、创建、命令、文件、stdin、暂停与恢复 |
 | `examples/validate-full.mjs` | 推荐的完整讲解与验收入口 |
-| `examples/validate-lifecycle.mjs` | 复用完整验收中的生命周期场景 |
+| `examples/run-local.mjs` | 本地 DNS 覆盖运行工具 |
 
 ```bash
 npm run example
-npm run demo
 npm run validate
-npm run validate:lifecycle
+npm run validate -- --lifecycle-only
 ```
 
 完整验收顺序与 Python 一致：
@@ -251,7 +249,7 @@ PTY 控制字符只在展示时过滤。失败保留为失败，相关生命周�
 本地联调需要指定 Gateway IP 时，设置 `DEVBOX_GATEWAY_IP`，并将 `DEVBOX_GATEWAY_URL`
 配置为 `https://{tunnel_id}-{port}.<gateway-domain>`，运行 `npm run validate:local`。
 此入口仅在当前进程内覆盖匹配域名的 DNS，保留 HTTPS 域名和证书校验，不修改系统 hosts 或 SDK。
-也可运行 `node examples/run-local.mjs demo` 或 `node examples/run-local.mjs validate-lifecycle`。
+只验证生命周期时运行 `npm run validate:local -- --lifecycle-only`。
 
 ## 开发
 
