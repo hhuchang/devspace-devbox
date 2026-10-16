@@ -65,6 +65,27 @@ def test_wrong_stdout_is_a_usage_failure_not_a_create_failure() -> None:
     sandbox.kill.assert_called_once()
 
 
+def test_pause_resume_checks_the_existing_file_before_reconnect() -> None:
+    api = client()
+    row = example["Round"](1)
+    example["run_round"](
+        api,
+        row,
+        run_id="test",
+        template="default",
+        lifetime=300,
+        checks=1,
+        request_timeout=5,
+        pause_resume=True,
+    )
+    sandbox = api.sandboxes.create.return_value
+    sandbox.pause.assert_called_once()
+    sandbox.resume.assert_called_once_with(timeout=300)
+    assert row.phases["pause"].ok and row.phases["resume"].ok
+    assert row.phases["persistence"].ok
+    assert row.use_ok
+
+
 @pytest.mark.parametrize("unknown", [False, True])
 def test_create_failure_and_unknown_result_are_distinguished(unknown: bool) -> None:
     api = client()

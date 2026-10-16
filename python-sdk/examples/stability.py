@@ -124,6 +124,13 @@ def file_probe(sandbox: Sandbox, path: str, content: bytes) -> str:
     return f"bytes={len(content)} exact_match=true"
 
 
+def restored_probe(sandbox: Sandbox, path: str, content: bytes, timeout: float) -> str:
+    command_probe(sandbox, timeout)
+    if sandbox.files.read_bytes(path) != content:
+        raise AssertionError("file content changed after pause/resume")
+    return "identity=matched file=preserved after pause/resume"
+
+
 def reconnect_probe(client: DevBox, row: Round, path: str, content: bytes, timeout: float) -> str:
     attached = client.sandboxes.connect(row.sandbox_id)
     try:
@@ -145,6 +152,7 @@ def run_round(
     lifetime: int,
     checks: int,
     request_timeout: float,
+    pause_resume: bool = False,
 ) -> None:
     sandbox: Sandbox | None = None
     try:
@@ -168,6 +176,13 @@ def run_round(
         path = f"/tmp/sdk-stability-{run_id}.bin"
         content = bytes(range(256)) * 16
         measure(row, "files", lambda: file_probe(sandbox, path, content))
+        if pause_resume:
+            measure(row, "pause", sandbox.pause)
+            measure(row, "resume", lambda: sandbox.resume(timeout=lifetime))
+            capture_http_failures(row, sandbox)
+            measure(
+                row, "persistence", lambda: restored_probe(sandbox, path, content, request_timeout)
+            )
         sandbox.close()
         measure(
             row, "reconnect", lambda: reconnect_probe(client, row, path, content, request_timeout)
@@ -238,7 +253,17 @@ def print_summary(rows: list[Round], summary: dict[str, object]) -> None:
         rate = f"{success / (success + failed):.1%}" if success + failed else "n/a"
         print(f"  {stage:<8} success={success} failed={failed} success_rate={rate}")
     print("  LATENCY seconds (successful phases; create failures shown separately)")
-    for name in ("create", "create_failed", "command", "files", "reconnect", "delete"):
+    for name in (
+        "create",
+        "create_failed",
+        "command",
+        "files",
+        "pause",
+        "resume",
+        "persistence",
+        "reconnect",
+        "delete",
+    ):
         group = "create" if name == "create_failed" else name
         values = [
             phase.seconds
@@ -262,6 +287,11 @@ def main() -> None:
     parser.add_argument("--request-timeout", type=float, default=30)
     parser.add_argument("--template", default=os.getenv("DEVBOX_TEST_TEMPLATE") or "default")
     parser.add_argument(
+        "--pause-resume",
+        action="store_true",
+        help="verify file persistence through one pause/resume per round",
+    )
+    parser.add_argument(
         "--report", type=Path, help="JSON report path (default: temporary directory)"
     )
     args = parser.parse_args()
@@ -282,6 +312,7 @@ def main() -> None:
     print(
         f"rounds={args.rounds} template={args.template} lifetime={args.lifetime}s "
         f"checks={args.checks} interval={args.interval}s request_timeout={args.request_timeout}s"
+        f" pause_resume={args.pause_resume}"
     )
     print(
         "mode=serial | no application retries | "
@@ -306,6 +337,7 @@ def main() -> None:
                     lifetime=args.lifetime,
                     checks=args.checks,
                     request_timeout=args.request_timeout,
+                    pause_resume=args.pause_resume,
                 )
                 if row.stop_reason:
                     print(f"STOP {row.stop_reason}", flush=True)
@@ -328,6 +360,7 @@ def main() -> None:
                 "checks": args.checks,
                 "interval_seconds": args.interval,
                 "request_timeout_seconds": args.request_timeout,
+                "pause_resume": args.pause_resume,
                 "manager_url": config.api_url,
                 "gateway_url": config.gateway_url,
             },

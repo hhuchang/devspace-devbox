@@ -3,8 +3,8 @@ import { syncBuiltinESMExports } from "node:module";
 import { isIP } from "node:net";
 
 const example = process.argv[2] ?? "validate-full";
-if (!["basic", "validate-full", "validate-lifecycle"].includes(example)) {
-  throw new Error("Expected example: basic, validate-full or validate-lifecycle");
+if (!["basic", "demo", "validate-full", "validate-lifecycle"].includes(example)) {
+  throw new Error("Expected example: basic, demo, validate-full or validate-lifecycle");
 }
 
 const original = dns.lookup;
@@ -29,7 +29,8 @@ if (gatewayIp) {
 }
 
 try {
-  await import(`./${example}.mjs`);
+  const entry = await import(`./${example}.mjs`);
+  if (entry.main) await entry.main();
 } finally {
   dns.lookup = original;
   syncBuiltinESMExports();

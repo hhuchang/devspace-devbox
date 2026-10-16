@@ -68,7 +68,7 @@ try {
 
 | 对象 | 方法 | 用途 |
 | --- | --- | --- |
-| `client.sandboxes` | `create`、`connect`、`get`、`list`、`metrics` | 批量管理沙箱 |
+| `client.sandboxes` | `create`、`connect`、`get`、`list` | 批量管理沙箱 |
 | `Sandbox` | `create`、`connect`、`getInfo`、`isRunning`、`setTimeout`、`refresh`、`pause`、`resume`、`kill`、`close` | 沙箱生命周期 |
 | `sandbox.commands` | `run`、`connect`、`list`、`sendStdin`、`closeStdin`、`sendSignal` | 命令与进程 |
 | `sandbox.files` | `read`、`write`、`list`、`stat`、`makeDir`、`move`、`remove` | 远端文件 |
@@ -219,16 +219,39 @@ try {
 
 ## 示例与验证
 
+| 入口 | 用途 |
+| --- | --- |
+| `examples/basic.mjs` | 最小入门示例 |
+| `examples/demo.mjs` | 七步短演示：模板、创建、命令、文件、stdin、暂停与恢复 |
+| `examples/validate-full.mjs` | 推荐的完整讲解与验收入口 |
+| `examples/validate-lifecycle.mjs` | 复用完整验收中的生命周期场景 |
+
 ```bash
 npm run example
+npm run demo
 npm run validate
+npm run validate:lifecycle
 ```
 
-`validate` 会创建一个临时沙箱，验证管理面生命周期以及命令、文件、PTY、Git 等数据面能力，最后删除沙箱。模板可通过 `DEVBOX_TEST_TEMPLATE` 覆盖。
+完整验收顺序与 Python 一致：
+
+1. 列出模板并按名称、ID 或别名选择具体 build，创建、查询、列表和连接沙箱。
+2. 验证环境变量、命令 stdout/stderr、流式回调、后台进程、stdin、重连和终止。
+3. 验证文件读写、元数据、二进制传输、目录监听、PTY 和本地 Git 工作流。
+4. 验证 `setTimeout` 延长与缩短、`refresh` 只延长，以及 pause/resume、Manager connect 恢复和 Gateway 自动唤醒。
+5. 每次恢复后核对 1 MiB 文件、原进程和环境变量，另建短生命周期沙箱验证超时销毁，最后清理。
+
+`DO` 展示调用，`STREAM`/`EVENT` 展示实时数据，`CHECK` 展示业务核对，`WAIT`/`STATE` 展示状态流转，
+最后输出 `PASS`/`FAIL` 和汇总。打印实际命令输出、退出码和耗时，不打印 API Key 或 Token；
+PTY 控制字符只在展示时过滤。失败保留为失败，相关生命周期步骤停止，清理仍执行，退出码为 1。
+
+模板通过 `DEVBOX_TEST_TEMPLATE` 配置，支持名称、ID 或别名。完整验收不接受独立的固定 Gateway 地址；
+默认使用 Manager 返回的地址，覆盖时必须包含 `{tunnel_id}`。自动唤醒依赖环境中的 Gateway 到 Manager 内部链路。
 
 本地联调需要指定 Gateway IP 时，设置 `DEVBOX_GATEWAY_IP`，并将 `DEVBOX_GATEWAY_URL`
 配置为 `https://{tunnel_id}-{port}.<gateway-domain>`，运行 `npm run validate:local`。
 此入口仅在当前进程内覆盖匹配域名的 DNS，保留 HTTPS 域名和证书校验，不修改系统 hosts 或 SDK。
+也可运行 `node examples/run-local.mjs demo` 或 `node examples/run-local.mjs validate-lifecycle`。
 
 ## 开发
 

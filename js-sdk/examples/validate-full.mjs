@@ -2,11 +2,15 @@ import { Buffer } from "node:buffer";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CommandExitError, DevBox, ServiceUnavailableError } from "../dist/index.js";
+import { setTimeout as sleep } from "node:timers/promises";
+import { pathToFileURL } from "node:url";
+import { stripVTControlCharacters } from "node:util";
+import { CommandExitError, DevBox, NotFoundError, SandboxState } from "../dist/index.js";
 
 class Validator {
   failures = [];
   tests = 0;
+  started = performance.now();
 
   async verify(name, operation) {
     this.tests += 1;
@@ -24,48 +28,95 @@ class Validator {
   }
 }
 
-const template = process.env.DEVBOX_TEST_TEMPLATE || "default";
-const validator = new Validator();
-const client = new DevBox();
-let sandbox;
-
-console.log(`DevBox full validation | template=${template}`);
-try {
-  section("Create sandbox", `Start template=${template}, timeout=300s, with an isolated runtime`);
-  sandbox = await validator.verify("sandbox.create", () =>
-    step("sandboxes.create(envs={DEVBOX_SDK_ENV: 'created-731'})", () =>
-      client.sandboxes.create(template, {
-        timeout: 300,
-        envs: { DEVBOX_SDK_ENV: "created-731" },
-        metadata: { sdk_validation: "javascript" },
-      }),
-    ),
-  );
-  if (!sandbox) {
-    console.log("STOP sandbox creation failed; runtime validation cannot continue");
-  } else {
-    await validateSandbox(client, sandbox, validator);
+export async function main({ lifecycleOnly = false } = {}) {
+  const template = process.env.DEVBOX_TEST_TEMPLATE || "default";
+  const validator = new Validator();
+  const client = new DevBox();
+  let sandbox;
+  let selected;
+  console.log(`DevBox ${lifecycleOnly ? "lifecycle" : "full"} validation | template=${template}`);
+  const gatewayUrl = process.env.DEVBOX_GATEWAY_URL;
+  if (gatewayUrl && !gatewayUrl.includes("{tunnel_id}")) {
+    await client.close();
+    throw new Error(
+      "Validation requires the created sandbox: unset DEVBOX_GATEWAY_URL or use {tunnel_id}",
+    );
   }
-} finally {
+  try {
+    section("Templates", "List available templates and select a concrete build");
+    selected = await validator.verify("templates.list", () => selectTemplate(client, template));
+    if (selected) {
+      section(
+        "Create sandbox",
+        `Start template=${selected.name}, timeout=300s, with an isolated runtime`,
+      );
+      sandbox = await validator.verify("sandbox.create", () =>
+        step(
+          "sandboxes.create(envs={DEVBOX_SDK_ENV: 'created-731'}, lifecycle={onTimeout:'pause', autoResume:true})",
+          () =>
+            client.sandboxes.create(selected.templateId, {
+              buildId: selected.buildId,
+              timeout: 300,
+              envs: { DEVBOX_SDK_ENV: "created-731" },
+              metadata: { sdk_validation: "javascript" },
+              lifecycle: { onTimeout: "pause", autoResume: true },
+            }),
+        ),
+      );
+      if (sandbox) {
+        console.log(`sandboxId=${sandbox.sandboxId}`);
+        if (!lifecycleOnly) await validateSandbox(client, sandbox, validator);
+        await validateLifecycle(client, sandbox, validator);
+      } else console.log("STOP sandbox creation failed; runtime validation cannot continue");
+    }
+  } finally {
+    try {
+      if (sandbox) {
+        section("Cleanup", "Delete the remote sandbox and close local connections");
+        await validator.verify("sandbox.delete", () =>
+          step("sandbox.kill()", () => sandbox.kill()),
+        );
+      }
+    } finally {
+      await sandbox?.close();
+      await client.close();
+    }
+  }
   if (sandbox) {
-    section("Cleanup", "Delete the remote sandbox and close local connections");
-    await validator.verify("sandbox.delete", () => step("sandbox.kill()", () => sandbox.kill()));
-    await sandbox.close();
+    const expiryClient = new DevBox();
+    try {
+      await validator.verify("lifecycle.timeoutKill", () => validateExpiry(expiryClient, selected));
+    } finally {
+      await expiryClient.close();
+    }
   }
-  await client.close();
+  console.log(
+    `SUMMARY tests=${validator.tests} passed=${validator.tests - validator.failures.length} failed=${validator.failures.length} elapsed=${seconds(validator.started)}s`,
+  );
+  if (validator.failures.length) {
+    console.log(`FAILED ${validator.failures.join(", ")}`);
+    process.exitCode = 1;
+  }
 }
 
-console.log(
-  `SUMMARY tests=${validator.tests} passed=${validator.tests - validator.failures.length} failed=${validator.failures.length}`,
-);
-if (validator.failures.length) {
-  console.log(`FAILED ${validator.failures.join(", ")}`);
-  process.exitCode = 1;
+async function selectTemplate(client, name) {
+  const templates = await step("templates.list()", () => client.templates.list());
+  for (const item of templates) {
+    console.log(
+      `    ${item.name} | id=${item.templateId} | build=${item.buildId} | aliases=${item.aliases.join(",")} | cpu=${item.cpuCount} | memory=${item.memoryMb} MiB`,
+    );
+  }
+  const selected = templates.find((item) =>
+    [item.name, item.templateId, ...item.aliases].includes(name),
+  );
+  if (!selected)
+    throw new Error(`template ${JSON.stringify(name)} is not in the available catalog`);
+  console.log(`    SELECT ${selected.name} | build=${selected.buildId}`);
+  return selected;
 }
 
 async function validateSandbox(client, sandbox, validator) {
-  section("Sandbox management", "Inspect, reconnect, extend lifetime and read monitoring data");
-  console.log(`sandboxId=${sandbox.sandboxId}`);
+  section("Sandbox management", "Inspect the sandbox, list it and obtain a new SDK handle");
 
   await validator.verify("manager.get", async () =>
     equal((await step("sandbox.getInfo()", () => sandbox.getInfo())).sandboxId, sandbox.sandboxId),
@@ -83,9 +134,6 @@ async function validateSandbox(client, sandbox, validator) {
       true,
     );
   });
-  await validator.verify("manager.setTimeout", () =>
-    step("sandbox.setTimeout(300) | remaining lifetime: 300s", () => sandbox.setTimeout(300)),
-  );
   await validator.verify("manager.connect", async () => {
     const connected = await step(
       `sandboxes.connect(${sandbox.sandboxId}) | open a new SDK handle`,
@@ -97,57 +145,221 @@ async function validateSandbox(client, sandbox, validator) {
       await step("connected.close() | keep the remote sandbox running", () => connected.close());
     }
   });
-  await validator.verify("manager.refresh", async () => {
-    const before = Date.now();
-    await step("sandbox.refresh(300) | extend deadline to at least now + 300s", () =>
-      sandbox.refresh(300),
-    );
-    const info = await step("sandbox.getInfo() | verify the actual deadline", () =>
-      sandbox.getInfo(),
-    );
-    if (
-      !info.endAt ||
-      info.endAt.getTime() < before + 295_000 ||
-      info.endAt.getTime() > Date.now() + 305_000
-    )
-      throw new Error(`refresh did not extend the deadline: ${info.endAt}`);
-  });
   const runtime = await validator.verify("runtime.ready", () => waitForRuntime(sandbox));
   if (!runtime) {
     console.log("SKIP commands, filesystem, PTY and Git: runtime gateway is unavailable");
   } else {
-    const gatewayUrl = process.env.DEVBOX_GATEWAY_URL;
-    if (gatewayUrl && !gatewayUrl.includes("{tunnel_id}")) {
-      console.log("SKIP runtime.environment: fixed gateway is independent of the created sandbox");
-    } else {
-      await validator.verify("runtime.environment", async () => {
-        const command = 'printf "%s|%s" "$DEVBOX_ID" "$DEVBOX_SDK_ENV"';
-        const result = await step(
-          `commands.run(${JSON.stringify(command)}) | verify sandbox identity and create-time environment`,
-          () => sandbox.commands.run(command),
-        );
-        equal(result.stdout, `${sandbox.sandboxId}|created-731`);
-        equal(result.stderr, "");
-      });
-    }
+    await validator.verify("runtime.environment", async () => {
+      const command = 'printf "%s|%s" "$DEVBOX_ID" "$DEVBOX_SDK_ENV"';
+      const result = await step(
+        `commands.run(${JSON.stringify(command)}) | verify sandbox identity and create-time environment`,
+        () => sandbox.commands.run(command),
+      );
+      equal(result.stdout, `${sandbox.sandboxId}|created-731`);
+      equal(result.stderr, "");
+    });
     await validateRuntime(sandbox, validator);
   }
 }
 
 async function waitForRuntime(sandbox) {
-  const deadline = performance.now() + 30_000;
-  while (true) {
+  const result = await step(
+    "commands.run('printf runtime-ready') | verify remote execution without readiness retries",
+    () => sandbox.commands.run("printf runtime-ready"),
+  );
+  equal(result.stdout, "runtime-ready");
+  equal(result.stderr, "");
+  return true;
+}
+
+async function validateLifecycle(client, sandbox, validator) {
+  section(
+    "Lifecycle",
+    "Keep files, environment and the original process across pause and recovery",
+  );
+  const path = `/tmp/devbox-lifecycle-${Date.now()}`;
+  const payload = Buffer.alloc(1024 * 1024);
+  for (let i = 0; i < payload.length; i++) payload[i] = i % 256;
+  let process;
+  const persistence = async () => {
+    const content = await step("files.readBytes() | compare all 1 MiB after recovery", () =>
+      sandbox.files.readBytes(path),
+    );
+    equal(Buffer.from(content).equals(payload), true);
+    console.log("    CHECK file content: identical (1 MiB)");
+    const running = await step("commands.list() | find the original running PID", () =>
+      sandbox.commands.list(),
+    );
+    equal(
+      running.some((item) => item.pid === process.pid && item.running),
+      true,
+    );
+    console.log(`    CHECK original process: pid=${process.pid}, still running`);
+    const result = await step("commands.run() | verify sandbox identity and environment", () =>
+      sandbox.commands.run('printf "%s|%s" "$DEVBOX_ID" "$DEVBOX_SDK_ENV"'),
+    );
+    equal(result.stdout, `${sandbox.sandboxId}|created-731`);
+    equal(result.stderr, "");
+    equal((await step("sandbox.getInfo()", () => sandbox.getInfo())).state, SandboxState.Running);
+  };
+  const stages = [
+    [
+      "lifecycle.prepare",
+      async () => {
+        await step(`files.write(${path}, <1 MiB>) | persistence proof`, () =>
+          sandbox.files.write(path, payload),
+        );
+        process = await step("commands.run('sleep 900', background=true)", () =>
+          sandbox.commands.run("sleep 900", { background: true }),
+        );
+        await step("process.disconnect() | keep the remote process alive", () =>
+          process.disconnect(),
+        );
+      },
+    ],
+    [
+      "lifecycle.deadlines",
+      async () => {
+        await step("setTimeout(7200) | remaining lifetime becomes 2h (greater than 1h)", () =>
+          sandbox.setTimeout(7200),
+        );
+        const extended = await deadline(sandbox, 7200);
+        await step("refresh(120) | must not shorten the existing 2h deadline", () =>
+          sandbox.refresh(120),
+        );
+        equal(
+          (await step("getInfo() | compare deadline", () => sandbox.getInfo())).endAt?.getTime(),
+          extended.getTime(),
+        );
+        await step("setTimeout(300) | explicitly shorten remaining lifetime to 5min", () =>
+          sandbox.setTimeout(300),
+        );
+        await deadline(sandbox, 300);
+        await step("refresh(600) | extend remaining lifetime to at least 10min", () =>
+          sandbox.refresh(600),
+        );
+        await deadline(sandbox, 600);
+      },
+    ],
+    [
+      "lifecycle.manualResume",
+      async () => {
+        await step("sandbox.pause() | save the running instance", () => sandbox.pause());
+        equal(
+          (await step("getInfo() | expect paused", () => sandbox.getInfo())).state,
+          SandboxState.Paused,
+        );
+        await step("sandbox.resume({timeout:300}) | restore this sandbox handle", () =>
+          sandbox.resume({ timeout: 300 }),
+        );
+        await deadline(sandbox, 300);
+        await persistence();
+      },
+    ],
+    [
+      "lifecycle.connectResume",
+      async () => {
+        await step("sandbox.pause()", () => sandbox.pause());
+        await step("sandbox.close() | close local connections, not the sandbox", () =>
+          sandbox.close(),
+        );
+        const connected = await step(
+          "sandboxes.connect(id, {timeout:300}) | Manager restores the paused sandbox",
+          () => client.sandboxes.connect(sandbox.sandboxId, { timeout: 300 }),
+        );
+        try {
+          equal(connected.sandboxId, sandbox.sandboxId);
+          const content = await step("connected.files.readBytes() | same remote filesystem", () =>
+            connected.files.readBytes(path),
+          );
+          equal(Buffer.from(content).equals(payload), true);
+          await deadline(connected, 300);
+        } finally {
+          await step("connected.close() | release the extra SDK handle", () => connected.close());
+        }
+        await persistence();
+      },
+    ],
+    [
+      "lifecycle.gatewayAutoResume",
+      async () => {
+        await step("setTimeout(10) | onTimeout=pause, autoResume=true", () =>
+          sandbox.setTimeout(10),
+        );
+        await waitForState(sandbox, SandboxState.Paused);
+        await step("sandbox.close() | force a fresh data-plane connection", () => sandbox.close());
+        console.log("    FLOW SDK request -> Gateway -> Manager gRPC -> restored runtime");
+        console.log("    No explicit sandbox.resume() or sandboxes.connect() call follows.");
+        const result = await step(
+          "commands.run('printf gateway-wake-ok') | access the paused sandbox directly",
+          () => sandbox.commands.run("printf gateway-wake-ok", { timeoutMs: 90_000 }),
+        );
+        equal(result.stdout, "gateway-wake-ok");
+        equal(result.stderr, "");
+        await persistence();
+      },
+    ],
+  ];
+  for (const [name, operation] of stages) {
+    const failures = validator.failures.length;
+    await validator.verify(name, operation);
+    if (validator.failures.length !== failures) {
+      console.log("STOP dependent lifecycle steps; cleanup will still run");
+      return;
+    }
+  }
+}
+
+async function deadline(sandbox, seconds) {
+  const info = await step("sandbox.getInfo() | read the real Manager deadline", () =>
+    sandbox.getInfo(),
+  );
+  if (!info.endAt) throw new Error("Manager did not return an expiration time");
+  const remaining = (info.endAt.getTime() - Date.now()) / 1000;
+  if (remaining < seconds - 15 || remaining > seconds + 5)
+    throw new Error(`expected about ${seconds}s remaining, received ${remaining.toFixed(1)}s`);
+  console.log(
+    `    CHECK remaining=${remaining.toFixed(1)}s | expires_at=${info.endAt.toISOString()}`,
+  );
+  return info.endAt;
+}
+
+async function waitForState(sandbox, expected) {
+  console.log(`  WAIT Manager state=${expected} | polling every 2s, maximum 90s`);
+  const started = performance.now();
+  let previous;
+  while (performance.now() - started < 90_000) {
+    let state;
     try {
-      const result = await step(
-        "commands.run('printf runtime-ready') | verify remote execution",
-        () => sandbox.commands.run("printf runtime-ready"),
-      );
-      equal(result.stdout, "runtime-ready");
-      return true;
+      state = (await sandbox.getInfo()).state;
     } catch (error) {
-      if (!(error instanceof ServiceUnavailableError) || performance.now() >= deadline) throw error;
-      console.log("    RETRY runtime is not ready; wait 1s (maximum 30s)");
-      await new Promise((resolve) => setTimeout(resolve, 1_000));
+      if (!(error instanceof NotFoundError) || expected !== SandboxState.Stopped) throw error;
+      state = SandboxState.Stopped;
+    }
+    if (state !== previous) console.log(`    STATE ${state} | elapsed=${seconds(started)}s`);
+    previous = state;
+    if (state === expected) return;
+    if (state === SandboxState.Failed) throw new Error("sandbox entered failed state");
+    await sleep(2_000);
+  }
+  throw new Error(`sandbox did not reach ${expected} within 90s`);
+}
+
+async function validateExpiry(client, template) {
+  section("Timeout cleanup", "A separate sandbox uses onTimeout=kill, not pause");
+  const sandbox = await step("sandboxes.create(timeout=10, lifecycle=kill)", () =>
+    client.sandboxes.create(template.templateId, { buildId: template.buildId, timeout: 10 }),
+  );
+  console.log(`    sandboxId=${sandbox.sandboxId}`);
+  try {
+    await waitForState(sandbox, SandboxState.Stopped);
+    equal(await step("sandbox.isRunning() | expect false", () => sandbox.isRunning()), false);
+    await step("sandbox.kill() | cleanup is safe even after expiration", () => sandbox.kill());
+  } finally {
+    try {
+      await sandbox.kill();
+    } finally {
+      await sandbox.close();
     }
   }
 }
@@ -236,6 +448,40 @@ async function validateRuntime(sandbox, validator) {
     equal(result.stderr, "");
   });
 
+  await validator.verify("commands.streaming", async () => {
+    const chunks = [];
+    const result = await step(
+      "commands.run(..., onStdout) | receive output while the command is running",
+      () =>
+        sandbox.commands.run("printf 'step-1\\n'; sleep 1; printf 'step-2\\n'", {
+          onStdout: (chunk) => {
+            chunks.push(chunk);
+            console.log(`    STREAM stdout=${JSON.stringify(chunk)}`);
+          },
+        }),
+    );
+    equal(result.stdout, "step-1\nstep-2\n");
+    equal(result.stderr, "");
+    equal(chunks.join(""), result.stdout);
+  });
+  await validator.verify("commands.signal", async () => {
+    const process = await step("commands.run('sleep 60', background=true)", () =>
+      sandbox.commands.run("sleep 60", { background: true }),
+    );
+    try {
+      await step("process.sendSignal('SIGTERM') | terminate only this process", () =>
+        process.sendSignal("SIGTERM"),
+      );
+      const result = await step(
+        "process.wait({check:false}) | collect the termination status",
+        () => process.wait({ check: false }),
+      );
+      if (result.exitCode === 0) throw new Error("terminated sleep reported a successful exit");
+    } finally {
+      await process.disconnect();
+    }
+  });
+
   section("Files", "Create, read, inspect, move, upload, download and remove files");
   await validator.verify("filesystem", async () => {
     const root = "/tmp/devbox-sdk-test";
@@ -295,6 +541,44 @@ async function validateRuntime(sandbox, validator) {
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
+  });
+
+  await validator.verify("filesystem.watch", async () => {
+    const root = `/tmp/devbox-watch-${Date.now()}`;
+    await step(`files.makeDir(${root})`, () => sandbox.files.makeDir(root));
+    const events = sandbox.files.watch(root, { includeEntry: false });
+    let observed = false;
+    const guard = setTimeout(() => {
+      void sandbox.close();
+    }, 10_000);
+    let process;
+    try {
+      process = await step("commands.run(..., background=true) | create a file after 1s", () =>
+        sandbox.commands.run(`sleep 1; printf watch-ok > ${root}/watch-proof.txt`, {
+          background: true,
+        }),
+      );
+      console.log("  DO files.watch() | observe a real file change, maximum 10s");
+      for await (const event of events) {
+        console.log(
+          `    EVENT name=${JSON.stringify(event.name)} type=${JSON.stringify(event.type)}`,
+        );
+        if (event.name === "watch-proof.txt") {
+          observed = true;
+          break;
+        }
+      }
+      equal(observed, true);
+      equal(await sandbox.files.read(`${root}/watch-proof.txt`), "watch-ok");
+      const result = await step("process.wait() | file writer completed", () => process.wait());
+      equal(result.exitCode, 0);
+    } finally {
+      clearTimeout(guard);
+      await events.return();
+      await process?.disconnect();
+      await sandbox.files.remove(root);
+    }
+    console.log("    CHECK file change observed; watcher closed");
   });
 
   section("Interactive terminal", "Start Bash, resize the terminal, send input and exit");
@@ -383,13 +667,10 @@ async function step(description, operation) {
     );
   else if (["string", "boolean", "number"].includes(typeof result))
     console.log(`    result=${JSON.stringify(result)}`);
+  else if (result instanceof Uint8Array)
+    console.log(`    bytes=${result.length} | content checked separately`);
   else if (Array.isArray(result)) {
     console.log(`    items=${result.length}`);
-    const sample = result.at(-1);
-    if (typeof sample?.cpuUsedPercent === "number")
-      console.log(
-        `    sample_time=${sample.timestampUnix} | cpu_used=${sample.cpuUsedPercent}% | memory_used=${sample.memoryUsedBytes} bytes | disk_used=${sample.diskUsedBytes} bytes`,
-      );
   }
   return result;
 }
@@ -397,13 +678,24 @@ async function step(description, operation) {
 function commandOutput(result) {
   console.log(`    pid=${result.pid} | exit_code=${result.exitCode}`);
   for (const name of ["stdout", "stderr"]) {
-    const value = result[name];
+    const value = terminalText(result[name]);
     console.log(`    ${name}:`);
     console.log(
       `      ${value ? value.slice(0, 4000).trimEnd().replaceAll("\n", "\n      ") : "(empty)"}`,
     );
     if (value.length > 4000) console.log(`      ... truncated (${value.length} characters total)`);
   }
+}
+
+function terminalText(value) {
+  return Array.from(stripVTControlCharacters(value))
+    .filter(
+      (character) =>
+        character === "\n" ||
+        character === "\t" ||
+        (character.codePointAt(0) >= 32 && character !== "\x7f"),
+    )
+    .join("");
 }
 
 function equal(actual, expected) {
@@ -414,3 +706,5 @@ function equal(actual, expected) {
 function seconds(started) {
   return ((performance.now() - started) / 1000).toFixed(3);
 }
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) await main();

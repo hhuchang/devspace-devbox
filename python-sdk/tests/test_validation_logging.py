@@ -76,3 +76,22 @@ def test_terminal_validation_rejects_input_echo_without_execution() -> None:
     example["_validate_terminal_result"](
         CommandResult(exit_code=7, stdout="prompt\r\n__PTY_42__\r\n30 100\r\n")
     )
+
+
+def test_terminal_output_is_readable_without_changing_raw_result(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    raw = "\x1b]0;root@devbox:~\x07\x1b[32mhello\x1b[0m\r\n"
+    result = CommandResult(exit_code=0, stdout=raw)
+    example["_command_output"](result)
+    output = capsys.readouterr().out
+    assert "hello" in output
+    assert "\x1b" not in output
+    assert "root@devbox" not in output
+    assert result.stdout == raw
+
+
+def test_binary_failure_does_not_dump_the_payload() -> None:
+    with pytest.raises(AssertionError, match="binary content mismatch") as error:
+        example["_equal"](b"a" * 1024, b"b" * 1024)
+    assert len(str(error.value)) < 120

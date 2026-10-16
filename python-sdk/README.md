@@ -77,7 +77,7 @@ with Sandbox.create("default", timeout=300) as sandbox:
 
 | 对象 | 方法 | 用途 |
 | --- | --- | --- |
-| `client.sandboxes` | `create`、`connect`、`get`、`list`、`metrics` | 批量管理沙箱 |
+| `client.sandboxes` | `create`、`connect`、`get`、`list` | 批量管理沙箱 |
 | `Sandbox` | `create`、`connect`、`get_info`、`is_running`、`set_timeout`、`refresh`、`pause`、`resume`、`kill`、`close` | 沙箱生命周期 |
 | `sandbox.commands` | `run`、`connect`、`list`、`send_stdin`、`close_stdin`、`send_signal` | 命令与进程 |
 | `sandbox.files` | `read`、`write`、`list`、`stat`、`make_dir`、`move`、`remove` | 远端文件操作 |
@@ -251,8 +251,9 @@ except DevBoxError as error:
 | --- | --- |
 | `examples/basic.py` | 推荐的同步入门路径 |
 | `examples/async_basic.py` | 异步入门路径 |
-| `examples/demo.py` | 无交互的核心能力演示 |
-| `examples/validate_full.py` | 创建临时沙箱并执行完整验收 |
+| `examples/demo.py` | 七步短演示：模板、创建、命令、文件、stdin、暂停与恢复 |
+| `examples/validate_full.py` | 推荐的完整讲解与验收入口，覆盖当前 Manager 与数据面能力 |
+| `examples/validate_lifecycle.py` | 复用完整验收中的生命周期场景，不重复执行数据面功能巡检 |
 | `examples/stability.py` | 串行批量创建、使用和删除，统计成功率与耗时 |
 
 核心能力演示：
@@ -261,14 +262,27 @@ except DevBoxError as error:
 python examples/demo.py
 ```
 
-全量验收覆盖生命周期、命令、文件传输、PTY 和本地 Git 工作流，并在结束时删除测试沙箱：
+完整验收按以下顺序执行，结束时删除测试沙箱：
+
+1. 查询模板列表，显示配置并选择具体 build；`DEVBOX_TEST_TEMPLATE` 支持名称、ID 或别名。
+2. 创建、查询、列表、连接、环境变量，以及命令、流式回调、后台进程、stdin、进程重连与终止。
+3. 文件读写、元数据、二进制传输、目录监听、PTY 和本地 Git 工作流。
+4. 验证 `set_timeout` 可延长和缩短，`refresh` 只延长、不缩短。
+5. 手动 pause/resume、通过 Manager connect 恢复，以及超时暂停后直接访问数据面触发 Gateway 自动唤醒。
+6. 每次恢复核对同一沙箱中的 1 MiB 文件、原后台进程和环境变量；另建短生命周期沙箱验证超时销毁。
 
 ```bash
 python examples/validate_full.py
 ```
 
-`DEVBOX_GATEWAY_URL` 使用固定地址时，Full Test 会先检查该地址是否可用，
-并标明 Manager 与固定数据面的独立验证模式；这不证明新建沙箱与该数据面属于同一实例。
+控制台中的 `DO` 表示 SDK 调用，`STREAM`/`EVENT` 展示实时数据，`CHECK` 展示业务核对，
+`WAIT`/`STATE` 展示异步状态流转，最后以 `PASS`/`FAIL` 和汇总收尾。展示命令实际 stdout、
+stderr、退出码和耗时，不打印 API Key 或 Token；PTY 控制字符只在展示时过滤，SDK 原始返回值不变。
+失败不会被重试覆盖，相关生命周期步骤会停止，清理仍执行；任一验证失败时退出码为 1。
+
+完整验收必须访问 Manager 新建的沙箱，不接受独立的固定 Gateway 地址。
+不指定 `DEVBOX_GATEWAY_URL` 时使用 Manager 返回的地址；覆盖地址时必须包含 `{tunnel_id}`。
+自动唤醒需要环境中已部署 Gateway 到 Manager 的内部恢复链路，不会跳过未接通的功能。
 
 本地环境尚未配置通配符 DNS 时，可设置 `DEVBOX_GATEWAY_IP` 为 Gateway IP，
 `DEVBOX_GATEWAY_URL` 为 `https://{tunnel_id}-{port}.<gateway-domain>`，通过以下入口运行：
@@ -277,7 +291,7 @@ python examples/validate_full.py
 python examples/run_local.py validate_full
 ```
 
-该入口也支持 `basic`、`async_basic`、`demo`。DNS 覆盖仅对当前示例进程和配置的
+该入口也支持 `basic`、`async_basic`、`demo`、`validate_lifecycle`。DNS 覆盖仅对当前示例进程和配置的
 Gateway 域名生效，保留 HTTPS Host、SNI 和证书校验，不修改系统 hosts。
 Gateway 必须能查询到 Manager 新建的 tunnel；IP 映射不会创建或恢复 tunnel。
 
@@ -293,6 +307,14 @@ Gateway 必须能查询到 Manager 新建的 tunnel；IP 映射不会创建或�
 ```bash
 python examples/run_local.py stability --rounds 20 --checks 3 --interval 2
 ```
+
+批量抽样暂停恢复时，增加 `--pause-resume`，并为快照调用留足请求时间：
+
+```bash
+python examples/run_local.py stability --rounds 5 --pause-resume --request-timeout 150
+```
+
+每轮分别统计 pause、resume 和恢复后原文件校验的耗时；恢复后只读取已有内容，不重新写入掩盖丢失。
 
 每轮创建后执行多次命令，核对沙箱 ID、计算结果、文件往返和重连后的数据，再删除沙箱。
 不重复 Git、PTY 等完整功能验收，也不代表多沙箱并发或长时间驻留稳定性测试。
