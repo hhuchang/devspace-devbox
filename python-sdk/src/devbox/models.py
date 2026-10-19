@@ -12,7 +12,6 @@ from .errors import ProtocolError
 class SandboxState(str, Enum):
     CREATING = "creating"
     RUNNING = "running"
-    PAUSING = "pausing"
     PAUSED = "paused"
     RESUMING = "resuming"
     STOPPING = "stopping"

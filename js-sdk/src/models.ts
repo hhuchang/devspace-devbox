@@ -17,7 +17,6 @@ import {
 export const SandboxState = {
   Creating: "creating",
   Running: "running",
-  Pausing: "pausing",
   Paused: "paused",
   Resuming: "resuming",
   Stopping: "stopping",
