@@ -89,7 +89,7 @@ Git 的 clone/pull/push 默认 `timeoutMs=300000`。PTY 和目录监听不设总
 `pause()` 保留内存和磁盘并关闭当前数据面连接；`resume({ timeout: 300 })` 恢复同一沙箱并用响应中的新 `connectToken` 覆盖暂停前的 Token，返回当前对象。
 暂停保留期为 24 小时，目前仅支持原节点恢复。已有命令/PTY/监听句柄应在暂停前断开，恢复后按 PID 重新连接或重新建立监听，SDK 不自动重放命令。
 生命周期 timeout 最大为 86400 秒（24 小时）；创建与恢复的正数 timeout 至少为 10 秒。运行后可用
-`setTimeout(5)` 验证短时自动销毁，后台清理最多有约 30 秒延迟。创建时可传
+`setTimeout(10)` 验证短时自动销毁，后台清理异步执行。创建时可传
 `lifecycle: { onTimeout: "pause", autoResume: true }`，让超时行为改为内存快照暂停。
 `autoResume: true` 允许兼容的 Gateway 在首次数据面请求到达时唤醒沙箱；显式 `connect()`/`resume()` 始终可用。
 SDK 会在 `connectToken` 到期前通过 Manager 静默更新连接凭证，不延长沙箱生命周期，用户无需管理 Token。
@@ -190,8 +190,8 @@ Manager 未直接返回数据面地址的部署可以设置 URL 模板，例如 
 
 Manager 的 `connectToken` 是 Relay 连接凭证，`tokenExpiration` 是其 Unix 秒过期时间；
 `tunnelExpiration` 是隧道自身的过期时间，两者独立。SDK 在内部保留这些字段，不放入沙箱公开信息或日志。
-`connect()` 获取 Manager 当前保存的连接信息，不保证签发新 Token。SDK 当前没有后台续期或
-Token 过期自动重连机制；获取新的连接凭证需显式调用 `connect()`，由 Manager 保证返回有效凭证。
+`connect()` 获取 Manager 当前保存的连接信息，不保证每次签发新 Token。SDK 在发起数据面请求前，
+会检查凭证有效期并在需要时向 Manager 更新；不运行后台定时续期，也不延长沙箱生命周期。
 
 数据面使用 EnvD 的 `/process.Process/*`、`/filesystem.Filesystem/*` 和 `/files`，
 不使用仅供 Orchestrator 调用的 `/envd/*` 控制接口。

@@ -17,6 +17,22 @@ DevBox 为云端隔离沙箱提供 Python 和 JavaScript/TypeScript SDK。两套
 - [Python SDK](python-sdk/README.md)
 - [JavaScript SDK](js-sdk/README.md)
 
+## 用户文档
+
+[快速入门](docs/index.md) · [模板](docs/guide/templates.md) · [命令与进程](docs/guide/commands.md) · [文件](docs/guide/files.md) · [终端与 Git](docs/guide/terminal-and-git.md) · [生命周期](docs/guide/lifecycle.md) · [SDK 参考](docs/reference/sdk.md) · [问题排查](docs/reference/troubleshooting.md)
+
+文档与 SDK 同仓维护，`docs/` 独立管理文档工具链。预览和构建：
+
+```bash
+cd docs
+npm ci
+npm run dev
+npm run build
+```
+
+仓库启用 GitHub Pages（Source 选择 GitHub Actions）后，文档工作流可从 `dev` 发布至
+`https://huaweicloud.github.io/devspace-devbox/`。启用前以上地址不代表已上线。
+
 ## 安装
 
 从仓库检出代码后安装：
