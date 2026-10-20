@@ -9,7 +9,7 @@ export default defineConfig({
   themeConfig: {
     nav: [
       { text: "快速入门", link: "/" },
-      { text: "SDK 参考", link: "/reference/sdk" },
+      { text: "SDK 接口", link: "/reference/sdk" },
     ],
     sidebar: [
       {
@@ -29,9 +29,20 @@ export default defineConfig({
         ],
       },
       {
+        text: "SDK 接口",
+        items: [
+          { text: "沙箱", link: "/reference/sdk#沙箱" },
+          { text: "模板", link: "/reference/sdk#模板" },
+          { text: "命令与进程", link: "/reference/sdk#命令与进程" },
+          { text: "文件", link: "/reference/sdk#文件" },
+          { text: "终端", link: "/reference/sdk#终端" },
+          { text: "Git", link: "/reference/sdk#git" },
+          { text: "配置与异常", link: "/reference/sdk#配置" },
+        ],
+      },
+      {
         text: "参考",
         items: [
-          { text: "SDK 方法与配置", link: "/reference/sdk" },
           { text: "问题排查", link: "/reference/troubleshooting" },
         ],
       },

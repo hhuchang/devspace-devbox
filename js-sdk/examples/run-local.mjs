@@ -11,21 +11,14 @@ const original = dns.lookup;
 const gatewayIp = process.env.DEVBOX_GATEWAY_IP?.trim();
 if (gatewayIp) {
   if (!isIP(gatewayIp)) throw new Error("DEVBOX_GATEWAY_IP must be an IP address");
-  const template = new URL(process.env.DEVBOX_GATEWAY_URL).hostname.replaceAll("{port}", "49983");
-  const [prefix, suffix] = template.split("{tunnel_id}");
   dns.lookup = function lookup(hostname, ...args) {
-    const name = hostname.toLowerCase();
-    const matches =
-      suffix === undefined
-        ? name === prefix
-        : name.startsWith(prefix) &&
-          name.endsWith(suffix) &&
-          name.length > prefix.length + suffix.length;
+    const [label, domain] = hostname.toLowerCase().split(".", 2);
+    const matches = domain !== undefined && label.endsWith("-49983");
     return original.call(this, matches ? gatewayIp : hostname, ...args);
   };
   // Change DNS only; preserve the URL, HTTP Host, TLS SNI and certificate verification.
   syncBuiltinESMExports();
-  console.log(`Local DNS: ${template} -> ${gatewayIp}`);
+  console.log(`Local DNS: *-49983.* -> ${gatewayIp}`);
 }
 
 try {
