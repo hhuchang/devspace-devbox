@@ -4,6 +4,8 @@ DevBox 提供隔离的云端 Linux 沙箱。通过 Python 或 JavaScript/TypeScr
 
 你的程序运行在本地或应用服务器中；SDK 中的命令和远端文件操作发生在沙箱里。
 
+使用 Go、Java 等其他语言直接接入，可从[API 参考](./api/index.md)开始；Python 与 JavaScript / TypeScript 用户可继续按下面的步骤使用 SDK。
+
 ## 安装
 
 需要 Python 3.10+，或 Node.js 20.18.1+。从源码安装：

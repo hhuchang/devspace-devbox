@@ -3,13 +3,14 @@ import { defineConfig } from "vitepress";
 export default defineConfig({
   lang: "zh-CN",
   title: "DevBox",
-  description: "使用 Python 和 JavaScript SDK 创建、连接和操作云端沙箱。",
+  description: "使用 SDK 或 HTTP API 创建、连接和操作云端沙箱。",
   base: "/devspace-devbox/",
   cleanUrls: true,
   themeConfig: {
     nav: [
       { text: "快速入门", link: "/" },
-      { text: "SDK 接口", link: "/reference/sdk" },
+      { text: "API 参考", link: "/api/" },
+      { text: "SDK 参考", link: "/reference/sdk" },
     ],
     sidebar: [
       {
@@ -29,7 +30,17 @@ export default defineConfig({
         ],
       },
       {
-        text: "SDK 接口",
+        text: "API 参考",
+        items: [
+          { text: "通用约定", link: "/api/" },
+          { text: "沙箱", link: "/api/sandboxes" },
+          { text: "模板", link: "/api/templates" },
+          { text: "进程与终端", link: "/api/processes" },
+          { text: "文件系统", link: "/api/filesystem" },
+        ],
+      },
+      {
+        text: "SDK 参考",
         items: [
           { text: "沙箱", link: "/reference/sdk#沙箱" },
           { text: "模板", link: "/reference/sdk#模板" },

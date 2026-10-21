@@ -1,5 +1,7 @@
 # SDK 接口参考
 
+本页列出 Python 与 JavaScript / TypeScript 的方法。直接发送 HTTP 请求或实现其他语言客户端，请阅读[API 参考](../api/index.md)。
+
 ## 使用入口
 
 | 入口 | 适用场景 |
@@ -95,7 +97,7 @@ Python 回调为 `on_stdout`、`on_stderr`，JS 为 `onStdout`、`onStderr`。�
 | `read_bytes()` / `readBytes()` | `path` | Python `bytes` / JS `Uint8Array` |
 | `write()` | `path`、`data`、`encoding` | 写入文本或二进制，返回 `FileInfo` |
 | `write_batch()` / `writeBatch()` | 路径与内容的映射、`encoding` | 按顺序写入多个文件，返回 `FileInfo` 列表；不保证整批原子性 |
-| `list()` | `path`、`depth=1` | 文件与目录的 `FileInfo` 列表 |
+| `list()` | `path`、`depth=1` | 文件与目录的 `FileInfo` 列表；当前服务只列一层 |
 | `stat()` | `path` | 一个路径的 `FileInfo` |
 | `exists()` | `path` | 路径是否存在 |
 | `make_dir()` / `makeDir()` | `path` | 创建目录 |
