@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import argparse
 import os
 import runpy
 import socket
@@ -13,18 +12,6 @@ from typing import Any
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "example",
-        choices=(
-            "basic",
-            "async_basic",
-            "validate_full",
-            "stability",
-        ),
-    )
-    parser.add_argument("arguments", nargs=argparse.REMAINDER)
-    args = parser.parse_args()
     original = socket.getaddrinfo
     gateway_ip = os.getenv("DEVBOX_GATEWAY_IP", "").strip()
     if gateway_ip:
@@ -47,8 +34,8 @@ def main() -> None:
         print(f"Local DNS: *-49983.* -> {gateway_ip}", flush=True)
     original_argv = sys.argv
     try:
-        script = str(Path(__file__).with_name(f"{args.example}.py"))
-        sys.argv = [script, *args.arguments]
+        script = str(Path(__file__).with_name("validate_full.py"))
+        sys.argv = [script, *original_argv[1:]]
         runpy.run_path(script, run_name="__main__")
     finally:
         sys.argv = original_argv

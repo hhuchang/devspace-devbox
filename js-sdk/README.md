@@ -100,7 +100,7 @@ SDK 会在 `connectToken` 到期前通过 Manager 静默更新连接凭证，不
 
 ```bash
 npm run build
-node examples/validate-full.mjs --lifecycle-only
+node examples/validate-full.mjs --mode lifecycle
 ```
 
 编辑器会根据类型声明为这些对象提供点号补全。例如创建目录使用
@@ -221,15 +221,19 @@ try {
 
 | 入口 | 用途 |
 | --- | --- |
-| `examples/basic.mjs` | 最小入门示例 |
-| `examples/validate-full.mjs` | 推荐的完整讲解与验收入口 |
+| `examples/validate-full.mjs` | 讲解、验收和串行批量测试 |
 | `examples/run-local.mjs` | 本地 DNS 覆盖运行工具 |
 
 ```bash
 npm run example
 npm run validate
-npm run validate -- --lifecycle-only
+npm run validate -- --mode lifecycle --rounds 5
 ```
+
+`basic` 验证管理查询、命令、文件、PTY 和 Git；`lifecycle` 验证生命周期；
+默认 `full` 执行全部。最小用法见本文前面的示例。
+`--rounds` 串行重复所选流程，输出每项失败数和 min/avg/max 耗时。
+创建或清理失败后停止新增资源，不以重试覆盖失败。
 
 完整验收顺序与 Python 一致：
 
@@ -246,10 +250,10 @@ PTY 控制字符只在展示时过滤。失败保留为失败，相关生命周�
 模板通过 `DEVBOX_TEST_TEMPLATE` 配置，支持名称、ID 或别名。完整验收不接受独立的固定 Gateway 地址；
 默认使用 Manager 返回的地址，覆盖时必须包含 `{tunnel_id}`。自动唤醒依赖环境中的 Gateway 到 Manager 内部链路。
 
-本地联调需要指定 Gateway IP 时，设置 `DEVBOX_GATEWAY_IP`，并将 `DEVBOX_GATEWAY_URL`
-配置为 `https://{tunnel_id}-{port}.<gateway-domain>`，运行 `npm run validate:local`。
+本地联调需要指定 Gateway IP 时，设置 `DEVBOX_GATEWAY_IP`，运行 `npm run validate:local`，
+仍使用 Manager 返回的域名。
 此入口仅在当前进程内覆盖匹配域名的 DNS，保留 HTTPS 域名和证书校验，不修改系统 hosts 或 SDK。
-只验证生命周期时运行 `npm run validate:local -- --lifecycle-only`。
+只验证生命周期时运行 `npm run validate:local -- --mode lifecycle`。
 
 ## 开发
 

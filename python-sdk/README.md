@@ -109,7 +109,7 @@ SDK 会在 `connectToken` 到期前通过 Manager 静默更新连接凭证，不
 部署新版 Manager 后，使用现有连接环境变量运行生命周期专项验证：
 
 ```bash
-python examples/validate_full.py --lifecycle-only
+python examples/validate_full.py --mode lifecycle
 ```
 
 PyCharm 会根据这些对象和类型标注提供点号补全。例如创建目录使用
@@ -249,10 +249,7 @@ except DevBoxError as error:
 
 | 文件 | 用途 |
 | --- | --- |
-| `examples/basic.py` | 推荐的同步入门路径 |
-| `examples/async_basic.py` | 异步入门路径 |
-| `examples/validate_full.py` | 推荐的完整讲解与验收入口，覆盖当前 Manager 与数据面能力 |
-| `examples/stability.py` | 串行批量创建、使用和删除，统计成功率与耗时 |
+| `examples/validate_full.py` | 讲解、验收和串行批量测试 |
 | `examples/run_local.py` | 本地 DNS 覆盖运行工具 |
 
 完整验收按以下顺序执行，结束时删除测试沙箱：
@@ -266,7 +263,12 @@ except DevBoxError as error:
 
 ```bash
 python examples/validate_full.py
+python examples/validate_full.py --mode basic
+python examples/validate_full.py --mode lifecycle --rounds 5
 ```
+
+`basic` 验证管理查询、命令、文件、PTY 和 Git；`lifecycle` 验证生命周期；
+`full` 执行全部。同步与异步最小用法见本文前面的示例。
 
 控制台中的 `DO` 表示 SDK 调用，`STREAM`/`EVENT` 展示实时数据，`CHECK` 展示业务核对，
 `WAIT`/`STATE` 展示异步状态流转，最后以 `PASS`/`FAIL` 和汇总收尾。展示命令实际 stdout、
@@ -278,46 +280,26 @@ stderr、退出码和耗时，不打印 API Key 或 Token；PTY 控制字符只�
 自动唤醒需要环境中已部署 Gateway 到 Manager 的内部恢复链路，不会跳过未接通的功能。
 
 本地环境尚未配置通配符 DNS 时，可设置 `DEVBOX_GATEWAY_IP` 为 Gateway IP，
-`DEVBOX_GATEWAY_URL` 为 `https://{tunnel_id}-{port}.<gateway-domain>`，通过以下入口运行：
+仍使用 Manager 返回的域名，通过以下入口运行：
 
 ```bash
-python examples/run_local.py validate_full
+python examples/run_local.py --mode lifecycle
 ```
 
-该入口也支持 `basic`、`async_basic`、`stability`；只验证生命周期时运行
-`python examples/run_local.py validate_full --lifecycle-only`。DNS 覆盖仅对当前示例进程和配置的
-Gateway 域名生效，保留 HTTPS Host、SNI 和证书校验，不修改系统 hosts。
+该入口接受相同的 `--mode`、`--rounds` 参数。DNS 覆盖仅对当前示例进程中
+首段以 `-49983` 结尾的域名生效，保留 HTTPS Host、SNI 和证书校验，不修改系统 hosts。
 Gateway 必须能查询到 Manager 新建的 tunnel；IP 映射不会创建或恢复 tunnel。
+本机设置了 HTTP 代理时，将测试域名加入 `NO_PROXY`，否则请求会交给代理解析，绕过此 DNS 覆盖。
 
 仅在数据面证书尚未配置好的临时调试环境，可设置
 `DEVBOX_GATEWAY_SKIP_TLS_VERIFY=true`，相当于对 Gateway 请求使用 `curl -k`。
 此开关同时适用于 Python 同步和异步接口，不影响 Manager 的证书校验；默认关闭，
 开启时会提示警告。它不能修复 DNS、连接超时或接口错误，且无法保证服务端身份，
 存在 Token 和沙箱数据被截获的风险，不应在生产使用。调试完成后删除该变量。
-原来的全局变量 `DEVBOX_SKIP_TLS_VERIFY` 不再使用。
 
-串行稳定性抽样（同样支持本地 Gateway DNS 覆盖）：
-
-```bash
-python examples/run_local.py stability --rounds 20 --checks 3 --interval 2
-```
-
-批量抽样暂停恢复时，增加 `--pause-resume`，并为快照调用留足请求时间：
-
-```bash
-python examples/run_local.py stability --rounds 5 --pause-resume --request-timeout 150
-```
-
-每轮分别统计 pause、resume 和恢复后原文件校验的耗时；恢复后只读取已有内容，不重新写入掩盖丢失。
-
-每轮创建后执行多次命令，核对沙箱 ID、计算结果、文件往返和重连后的数据，再删除沙箱。
-不重复 Git、PTY 等完整功能验收，也不代表多沙箱并发或长时间驻留稳定性测试。
-默认沙箱生命周期 300 秒、单次请求超时 30 秒；可用 `--lifetime`、`--request-timeout` 调整。
-创建成功率以实际尝试次数为分母，使用成功率以创建成功数为分母；耗时显示 min/avg/p50/p95/max，
-创建失败耗时单独统计。每轮详情保存为临时目录中的 JSON，路径在控制台打印，可用 `--report` 指定。
-测试不以重试覆盖失败；删除失败或创建结果不明时停止新增资源。任一轮失败时进程退出码为 1。
-数据面 HTTP 错误会记录时间、URL、状态码、截断并脱敏的响应体和请求 ID，不记录 Cookie。
-遇到 404，会查询沙箱状态，等待 1 秒后执行一次无副作用命令用于判断是否恢复；原轮仍计为失败。
+`--rounds` 串行重复所选流程，输出每项成功/失败数和 min/avg/max 耗时。
+创建或清理失败后停止新增资源；其他失败保留在汇总中，不以重试覆盖。
+生命周期测试分别验证新连接和复用 SDK 句柄自动唤醒，恢复后读取原文件而非重新写入。
 
 ## 开发验证
 

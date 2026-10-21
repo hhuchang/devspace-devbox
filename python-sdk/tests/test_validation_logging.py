@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import runpy
+import sys
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 
@@ -44,9 +46,7 @@ def test_failed_command_prints_stderr_and_still_fails(capsys: pytest.CaptureFixt
 
     validator = example["Validator"]()
     validator.verify("git.workflow", lambda: example["_step"]("git init", operation))
-    with pytest.raises(SystemExit) as error:
-        validator.finish()
-    assert error.value.code == 1
+    validator.finish()
     output = capsys.readouterr().out
     assert "git: command not found" in output
     assert "FAIL git.workflow" in output
@@ -95,3 +95,47 @@ def test_binary_failure_does_not_dump_the_payload() -> None:
     with pytest.raises(AssertionError, match="binary content mismatch") as error:
         example["_equal"](b"a" * 1024, b"b" * 1024)
     assert len(str(error.value)) < 120
+
+
+@pytest.mark.parametrize(
+    "failed", ["sandbox.create", "sandbox.delete", "lifecycle.timeout_kill", "commands.stdout", ""]
+)
+def test_batch_failure_and_cleanup_policy(monkeypatch: pytest.MonkeyPatch, failed: str) -> None:
+    namespace = example["main"].__globals__
+    validator = example["Validator"]()
+    validator.timings = {"sandbox.create": 0.1, "sandbox.delete": 0.1}
+    validator.failures = [failed] if failed else []
+    run = Mock(return_value=validator)
+    monkeypatch.setitem(namespace, "run_round", run)
+    monkeypatch.setattr(sys, "argv", ["validate_full.py", "--mode", "basic", "--rounds", "2"])
+    if failed:
+        with pytest.raises(SystemExit, match="1"):
+            example["main"]()
+    else:
+        example["main"]()
+    expected = 1 if failed in ("sandbox.create", "sandbox.delete", "lifecycle.timeout_kill") else 2
+    assert run.call_count == expected
+    run.assert_called_with("basic")
+
+
+def test_local_runner_restores_arguments_and_dns(monkeypatch: pytest.MonkeyPatch) -> None:
+    import socket
+
+    runner = runpy.run_path(str(Path(__file__).parents[1] / "examples" / "run_local.py"))
+    arguments = ["run_local.py", "--mode", "lifecycle", "--rounds", "2"]
+    monkeypatch.setattr(sys, "argv", arguments)
+    monkeypatch.setenv("DEVBOX_GATEWAY_IP", "127.0.0.1")
+    original = socket.getaddrinfo
+
+    def execute(path: str, *, run_name: str) -> dict[str, object]:
+        assert Path(path).name == "validate_full.py"
+        assert sys.argv == [path, *arguments[1:]]
+        assert run_name == "__main__"
+        assert socket.getaddrinfo is not original
+        raise RuntimeError("script failed")
+
+    monkeypatch.setattr(runpy, "run_path", execute)
+    with pytest.raises(RuntimeError, match="script failed"):
+        runner["main"]()
+    assert sys.argv is arguments
+    assert socket.getaddrinfo is original

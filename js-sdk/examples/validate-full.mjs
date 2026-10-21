@@ -5,11 +5,18 @@ import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
 import { parseArgs, stripVTControlCharacters } from "node:util";
-import { CommandExitError, DevBox, NotFoundError, SandboxState } from "../dist/index.js";
+import {
+  CommandExitError,
+  DevBox,
+  DevBoxError,
+  NotFoundError,
+  SandboxState,
+} from "../dist/index.js";
 
 class Validator {
   failures = [];
   tests = 0;
+  timings = new Map();
   started = performance.now();
 
   async verify(name, operation) {
@@ -22,8 +29,14 @@ class Validator {
       return result;
     } catch (error) {
       this.failures.push(name);
-      console.log(`FAIL ${name} | ${seconds(started)}s | ${error.name}: ${error.message}`);
+      const detail =
+        error instanceof DevBoxError
+          ? ` | http=${error.statusCode} request_id=${error.requestId}`
+          : "";
+      console.log(`FAIL ${name} | ${seconds(started)}s | ${error.name}: ${error.message}${detail}`);
       return undefined;
+    } finally {
+      this.timings.set(name, (performance.now() - started) / 1000);
     }
   }
 }
@@ -32,21 +45,59 @@ export async function main({ args = process.argv.slice(2) } = {}) {
   const { values } = parseArgs({
     args,
     options: {
-      "lifecycle-only": { type: "boolean", default: false },
+      mode: { type: "string", default: "full" },
+      rounds: { type: "string", default: "1" },
       help: { type: "boolean", short: "h" },
     },
   });
   if (values.help) {
-    console.log("Usage: node examples/validate-full.mjs [--lifecycle-only]");
+    console.log(
+      "Usage: node examples/validate-full.mjs [--mode basic|lifecycle|full] [--rounds N]",
+    );
     return;
   }
-  const lifecycleOnly = values["lifecycle-only"];
+  const rounds = Number(values.rounds);
+  if (!["basic", "lifecycle", "full"].includes(values.mode))
+    throw new Error("--mode must be basic, lifecycle or full");
+  if (!Number.isSafeInteger(rounds) || rounds < 1)
+    throw new Error("--rounds must be a positive integer");
+  const runs = [];
+  for (let number = 1; number <= rounds; number += 1) {
+    console.log(`\nROUND ${number}/${rounds}`);
+    const result = await runRound(values.mode);
+    runs.push(result);
+    if (
+      !result.timings.has("sandbox.create") ||
+      result.failures.some((name) =>
+        ["sandbox.create", "sandbox.delete", "lifecycle.timeoutKill"].includes(name),
+      )
+    ) {
+      console.log("STOP batch: creation or cleanup failed; inspect before continuing");
+      break;
+    }
+  }
+  const passed = runs.filter((run) => !run.failures.length).length;
+  if (rounds > 1) {
+    console.log(`\nBATCH attempted=${runs.length} passed=${passed} failed=${runs.length - passed}`);
+    for (const name of new Set(runs.flatMap((run) => [...run.timings.keys()]))) {
+      const times = runs.filter((run) => run.timings.has(name)).map((run) => run.timings.get(name));
+      const failures = runs.filter((run) => run.failures.includes(name)).length;
+      const avg = times.reduce((sum, time) => sum + time, 0) / times.length;
+      console.log(
+        `  ${name} | n=${times.length} failed=${failures} | min=${Math.min(...times).toFixed(3)}s avg=${avg.toFixed(3)}s max=${Math.max(...times).toFixed(3)}s`,
+      );
+    }
+  }
+  if (passed !== rounds) process.exitCode = 1;
+}
+
+async function runRound(mode) {
   const template = process.env.DEVBOX_TEST_TEMPLATE || "default";
   const validator = new Validator();
   const client = new DevBox();
   let sandbox;
   let selected;
-  console.log(`DevBox ${lifecycleOnly ? "lifecycle" : "full"} validation | template=${template}`);
+  console.log(`DevBox ${mode} validation | template=${template}`);
   const gatewayUrl = process.env.DEVBOX_GATEWAY_URL;
   if (gatewayUrl && !gatewayUrl.includes("{tunnel_id}")) {
     await client.close();
@@ -62,23 +113,24 @@ export async function main({ args = process.argv.slice(2) } = {}) {
         "Create sandbox",
         `Start template=${selected.name}, timeout=300s, with an isolated runtime`,
       );
+      const lifecycle = mode !== "basic" ? { onTimeout: "pause", autoResume: true } : undefined;
       sandbox = await validator.verify("sandbox.create", () =>
         step(
-          "sandboxes.create(envs={DEVBOX_SDK_ENV: 'created-731'}, lifecycle={onTimeout:'pause', autoResume:true})",
+          `sandboxes.create({timeout:300, envs:..., lifecycle:${JSON.stringify(lifecycle)}})`,
           () =>
             client.sandboxes.create(selected.templateId, {
               buildId: selected.buildId,
               timeout: 300,
               envs: { DEVBOX_SDK_ENV: "created-731" },
               metadata: { sdk_validation: "javascript" },
-              lifecycle: { onTimeout: "pause", autoResume: true },
+              lifecycle,
             }),
         ),
       );
       if (sandbox) {
         console.log(`sandboxId=${sandbox.sandboxId}`);
-        if (!lifecycleOnly) await validateSandbox(client, sandbox, validator);
-        await validateLifecycle(client, sandbox, validator);
+        if (mode !== "lifecycle") await validateSandbox(client, sandbox, validator);
+        if (mode !== "basic") await validateLifecycle(client, sandbox, validator);
       } else console.log("STOP sandbox creation failed; runtime validation cannot continue");
     }
   } finally {
@@ -94,7 +146,7 @@ export async function main({ args = process.argv.slice(2) } = {}) {
       await client.close();
     }
   }
-  if (sandbox) {
+  if (sandbox && mode !== "basic" && !validator.failures.includes("sandbox.delete")) {
     const expiryClient = new DevBox();
     try {
       await validator.verify("lifecycle.timeoutKill", () => validateExpiry(expiryClient, selected));
@@ -107,8 +159,8 @@ export async function main({ args = process.argv.slice(2) } = {}) {
   );
   if (validator.failures.length) {
     console.log(`FAILED ${validator.failures.join(", ")}`);
-    process.exitCode = 1;
   }
+  return validator;
 }
 
 async function selectTemplate(client, name) {
@@ -214,6 +266,22 @@ async function validateLifecycle(client, sandbox, validator) {
     equal(result.stderr, "");
     equal((await step("sandbox.getInfo()", () => sandbox.getInfo())).state, SandboxState.Running);
   };
+  const automaticResume = async (freshConnection) => {
+    await step("setTimeout(10) | onTimeout=pause, autoResume=true", () => sandbox.setTimeout(10));
+    await waitForState(sandbox, SandboxState.Paused);
+    if (freshConnection)
+      await step("sandbox.close() | force a fresh data-plane connection", () => sandbox.close());
+    else console.log("    Reuse the SDK handle and connection pool without close().");
+    console.log("    FLOW SDK request -> Gateway -> Manager gRPC -> restored runtime");
+    console.log("    No explicit sandbox.resume() or sandboxes.connect() call follows.");
+    const result = await step(
+      "commands.run('printf gateway-wake-ok') | access the paused sandbox directly",
+      () => sandbox.commands.run("printf gateway-wake-ok", { timeoutMs: 90_000 }),
+    );
+    equal(result.stdout, "gateway-wake-ok");
+    equal(result.stderr, "");
+    await persistence();
+  };
   const stages = [
     [
       "lifecycle.prepare",
@@ -292,25 +360,8 @@ async function validateLifecycle(client, sandbox, validator) {
         await persistence();
       },
     ],
-    [
-      "lifecycle.gatewayAutoResume",
-      async () => {
-        await step("setTimeout(10) | onTimeout=pause, autoResume=true", () =>
-          sandbox.setTimeout(10),
-        );
-        await waitForState(sandbox, SandboxState.Paused);
-        await step("sandbox.close() | force a fresh data-plane connection", () => sandbox.close());
-        console.log("    FLOW SDK request -> Gateway -> Manager gRPC -> restored runtime");
-        console.log("    No explicit sandbox.resume() or sandboxes.connect() call follows.");
-        const result = await step(
-          "commands.run('printf gateway-wake-ok') | access the paused sandbox directly",
-          () => sandbox.commands.run("printf gateway-wake-ok", { timeoutMs: 90_000 }),
-        );
-        equal(result.stdout, "gateway-wake-ok");
-        equal(result.stderr, "");
-        await persistence();
-      },
-    ],
+    ["lifecycle.gatewayAutoResume", () => automaticResume(true)],
+    ["lifecycle.gatewayReusedConnection", () => automaticResume(false)],
   ];
   for (const [name, operation] of stages) {
     const failures = validator.failures.length;
@@ -351,7 +402,6 @@ async function waitForState(sandbox, expected) {
     if (state !== previous) console.log(`    STATE ${state} | elapsed=${seconds(started)}s`);
     previous = state;
     if (state === expected) return;
-    if (state === SandboxState.Failed) throw new Error("sandbox entered failed state");
     await sleep(2_000);
   }
   throw new Error(`sandbox did not reach ${expected} within 90s`);
@@ -366,10 +416,9 @@ async function validateExpiry(client, template) {
   try {
     await waitForState(sandbox, SandboxState.Stopped);
     equal(await step("sandbox.isRunning() | expect false", () => sandbox.isRunning()), false);
-    await step("sandbox.kill() | cleanup is safe even after expiration", () => sandbox.kill());
   } finally {
     try {
-      await sandbox.kill();
+      await step("sandbox.kill() | cleanup is safe even after expiration", () => sandbox.kill());
     } finally {
       await sandbox.close();
     }

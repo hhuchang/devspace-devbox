@@ -2,11 +2,6 @@ import dns from "node:dns";
 import { syncBuiltinESMExports } from "node:module";
 import { isIP } from "node:net";
 
-const example = process.argv[2] ?? "validate-full";
-if (!["basic", "validate-full"].includes(example)) {
-  throw new Error("Expected example: basic or validate-full");
-}
-
 const original = dns.lookup;
 const gatewayIp = process.env.DEVBOX_GATEWAY_IP?.trim();
 if (gatewayIp) {
@@ -22,8 +17,8 @@ if (gatewayIp) {
 }
 
 try {
-  const entry = await import(`./${example}.mjs`);
-  if (entry.main) await entry.main({ args: process.argv.slice(3) });
+  const { main } = await import("./validate-full.mjs");
+  await main({ args: process.argv.slice(2) });
 } finally {
   dns.lookup = original;
   syncBuiltinESMExports();

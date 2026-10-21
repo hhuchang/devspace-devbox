@@ -1,7 +1,6 @@
 import { ProtocolError } from "./errors.js";
 import {
   numberValue,
-  objectItems,
   objectValue,
   optionalDate,
   optionalNumber,
@@ -15,13 +14,9 @@ import {
 } from "./internal/wire.js";
 
 export const SandboxState = {
-  Creating: "creating",
   Running: "running",
   Paused: "paused",
-  Resuming: "resuming",
-  Stopping: "stopping",
   Stopped: "stopped",
-  Failed: "failed",
 } as const;
 export type SandboxState = (typeof SandboxState)[keyof typeof SandboxState];
 
@@ -216,8 +211,4 @@ export function parseFileInfo(value: WireObject): FileInfo {
     modifiedAt: optionalDate(pickOr(value, undefined, "modifiedTime", "modifiedAt", "modified_at")),
     symlinkTarget: optionalString(pickOr(value, undefined, "symlinkTarget", "symlink_target")),
   };
-}
-
-export function parseObjectItems(value: unknown): WireObject[] {
-  return objectItems(value);
 }

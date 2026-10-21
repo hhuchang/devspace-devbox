@@ -10,13 +10,9 @@ from .errors import ProtocolError
 
 
 class SandboxState(str, Enum):
-    CREATING = "creating"
     RUNNING = "running"
     PAUSED = "paused"
-    RESUMING = "resuming"
-    STOPPING = "stopping"
     STOPPED = "stopped"
-    FAILED = "failed"
 
 
 class FileType(str, Enum):
@@ -234,13 +230,6 @@ class Page(Generic[T]):
     total: int | None = None
 
 
-def parse_datetime(value: object) -> datetime:
-    parsed = parse_optional_datetime(value)
-    if parsed is None:
-        raise ProtocolError("DevBox response timestamp is missing")
-    return parsed
-
-
 def parse_optional_datetime(value: object) -> datetime | None:
     if value is None or value == "":
         return None
@@ -285,12 +274,6 @@ def _string_tuple(value: object) -> tuple[str, ...]:
     return tuple(str(item) for item in value)
 
 
-def _mapping_items(value: object) -> tuple[Mapping[str, Any], ...]:
-    if not isinstance(value, list | tuple):
-        return ()
-    return tuple(item for item in value if isinstance(item, Mapping))
-
-
 def _domain(value: object) -> str:
     raw = str(value or "")
     if not raw or raw == "None":
@@ -311,15 +294,6 @@ def _integer(value: object) -> int:
         except ValueError as error:
             raise ProtocolError("DevBox response value is not an integer") from error
     raise ProtocolError("DevBox response value is not an integer")
-
-
-def _number(value: object) -> float:
-    if isinstance(value, int | float | str | bytes | bytearray):
-        try:
-            return float(value)
-        except ValueError as error:
-            raise ProtocolError("DevBox response value is not a number") from error
-    raise ProtocolError("DevBox response value is not a number")
 
 
 E = TypeVar("E", bound=Enum)

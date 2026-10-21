@@ -9,13 +9,13 @@ import {
   checkedTimeout,
   identifier,
   numberValue,
+  objectItems,
   objectValue,
   type WireObject,
 } from "./internal/wire.js";
 import {
   type Page,
   parseConnection,
-  parseObjectItems,
   parseSandboxInfo,
   type SandboxConnection,
   type SandboxInfo,
@@ -102,7 +102,7 @@ export class Sandboxes {
     });
     const total = headers.get("x-total-running");
     return {
-      items: parseObjectItems(body).map(parseSandboxInfo),
+      items: objectItems(body).map(parseSandboxInfo),
       nextToken: headers.get("x-next-token") ?? undefined,
       total: total ? responseInteger(total, "X-Total-Running") : undefined,
     };

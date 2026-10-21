@@ -20,6 +20,7 @@ from devbox import (
     CommandHandle,
     CommandResult,
     DevBox,
+    DevBoxError,
     NotFoundError,
     PtySize,
     Sandbox,
@@ -37,6 +38,7 @@ class Validator:
     def __init__(self) -> None:
         self.failures: list[str] = []
         self.tests = 0
+        self.timings: dict[str, float] = {}
         self.started_at = time.monotonic()
 
     def verify(self, name: str, operation: Callable[[], T]) -> T | None:
@@ -47,13 +49,18 @@ class Validator:
             result = operation()
         except Exception as error:
             self.failures.append(name)
+            detail = ""
+            if isinstance(error, DevBoxError):
+                detail = f" | http={error.status_code} request_id={error.request_id}"
             print(
-                f"FAIL {name} | {_seconds(started_at)}s | {type(error).__name__}: {error}",
+                f"FAIL {name} | {_seconds(started_at)}s | {type(error).__name__}: {error}{detail}",
                 flush=True,
             )
             if error.__cause__ is not None:
                 traceback.print_exception(type(error), error, error.__traceback__, file=sys.stdout)
             return None
+        finally:
+            self.timings[name] = time.monotonic() - started_at
         print(f"PASS {name} | {_seconds(started_at)}s", flush=True)
         return result
 
@@ -65,15 +72,14 @@ class Validator:
         )
         if self.failures:
             print(f"FAILED {', '.join(self.failures)}")
-            raise SystemExit(1)
 
 
-def main(*, lifecycle_only: bool = False) -> None:
+def run_round(mode: str) -> Validator:
     template = os.getenv("DEVBOX_TEST_TEMPLATE", "default").strip() or "default"
     validator = Validator()
     sandbox: Sandbox | None = None
 
-    print(f"DevBox {'lifecycle' if lifecycle_only else 'full'} validation | template={template}")
+    print(f"DevBox {mode} validation | template={template}")
     gateway_url = ConnectionConfig.resolve().gateway_url
     if gateway_url:
         print(f"gateway={gateway_url}")
@@ -88,21 +94,24 @@ def main(*, lifecycle_only: bool = False) -> None:
         selected = validator.verify("templates.list", lambda: _select_template(client, template))
         if selected is None:
             validator.finish()
-            return
+            return validator
         _section(
             "Create sandbox", f"Start template={template!r}, timeout=300s, with an isolated runtime"
+        )
+        lifecycle = (
+            SandboxLifecycle(on_timeout="pause", auto_resume=True) if mode != "basic" else None
         )
         sandbox = validator.verify(
             "sandbox.create",
             lambda: _step(
-                "sandboxes.create(envs=..., lifecycle={on_timeout:'pause', auto_resume:True})",
+                f"sandboxes.create(timeout=300, envs=..., lifecycle={lifecycle!r})",
                 lambda: client.sandboxes.create(
                     selected.template_id,
                     build_id=selected.build_id,
                     timeout=300,
                     envs={"DEVBOX_SDK_ENV": "created-731"},
                     metadata={"sdk_validation": "python"},
-                    lifecycle=SandboxLifecycle(on_timeout="pause", auto_resume=True),
+                    lifecycle=lifecycle,
                 ),
             ),
         )
@@ -110,9 +119,10 @@ def main(*, lifecycle_only: bool = False) -> None:
             print("STOP sandbox creation failed; runtime validation cannot continue")
         else:
             print(f"sandbox_id={sandbox.sandbox_id}")
-            if not lifecycle_only:
+            if mode != "lifecycle":
                 validate_sandbox(client, sandbox, validator)
-            validate_lifecycle(client, sandbox, validator)
+            if mode != "basic":
+                validate_lifecycle(client, sandbox, validator)
     finally:
         if sandbox is not None:
             _section("Cleanup", "Delete the remote sandbox and close local connections")
@@ -120,12 +130,46 @@ def main(*, lifecycle_only: bool = False) -> None:
             sandbox.close()
         client.close()
 
-    if sandbox is not None:
+    if sandbox is not None and mode != "basic" and "sandbox.delete" not in validator.failures:
         with DevBox() as expiry_client:
             validator.verify(
                 "lifecycle.timeout_kill", lambda: _validate_expiry(expiry_client, selected)
             )
     validator.finish()
+    return validator
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Validate DevBox SDK functionality")
+    parser.add_argument("--mode", choices=("basic", "lifecycle", "full"), default="full")
+    parser.add_argument("--rounds", type=int, default=1, help="Serial repetitions")
+    args = parser.parse_args()
+    if args.rounds < 1:
+        parser.error("--rounds must be positive")
+    runs: list[Validator] = []
+    for number in range(1, args.rounds + 1):
+        print(f"\nROUND {number}/{args.rounds}", flush=True)
+        result = run_round(args.mode)
+        runs.append(result)
+        if "sandbox.create" not in result.timings or any(
+            name in result.failures
+            for name in ("sandbox.create", "sandbox.delete", "lifecycle.timeout_kill")
+        ):
+            print("STOP batch: creation or cleanup failed; inspect before continuing")
+            break
+    passed = sum(not run.failures for run in runs)
+    if args.rounds > 1:
+        print(f"\nBATCH attempted={len(runs)} passed={passed} failed={len(runs) - passed}")
+        for name in dict.fromkeys(name for run in runs for name in run.timings):
+            values = [run.timings[name] for run in runs if name in run.timings]
+            failures = sum(name in run.failures for run in runs)
+            print(
+                f"  {name} | n={len(values)} failed={failures}"
+                f" | min={min(values):.3f}s avg={sum(values) / len(values):.3f}s"
+                f" max={max(values):.3f}s"
+            )
+    if passed != args.rounds:
+        raise SystemExit(1)
 
 
 def _select_template(client: DevBox, name: str) -> TemplateInfo:
@@ -244,12 +288,15 @@ def validate_lifecycle(client: DevBox, sandbox: Sandbox, validator: Validator) -
             _step("connected.close() | release the extra SDK handle", connected.close)
         persistence()
 
-    def automatic_resume() -> None:
+    def automatic_resume(*, fresh_connection: bool) -> None:
         _step(
             "set_timeout(10) | on_timeout=pause, auto_resume=True", lambda: sandbox.set_timeout(10)
         )
         _wait_for_state(sandbox, SandboxState.PAUSED)
-        _step("sandbox.close() | force a fresh data-plane connection", sandbox.close)
+        if fresh_connection:
+            _step("sandbox.close() | force a fresh data-plane connection", sandbox.close)
+        else:
+            print("    Reuse the SDK handle and connection pool without close().", flush=True)
         print("    FLOW SDK request -> Gateway -> Manager gRPC -> restored runtime", flush=True)
         print("    No explicit sandbox.resume() or sandboxes.connect() call follows.", flush=True)
         result = _step(
@@ -264,7 +311,8 @@ def validate_lifecycle(client: DevBox, sandbox: Sandbox, validator: Validator) -
         ("lifecycle.deadlines", deadlines),
         ("lifecycle.manual_resume", manual_resume),
         ("lifecycle.connect_resume", connect_resume),
-        ("lifecycle.gateway_auto_resume", automatic_resume),
+        ("lifecycle.gateway_auto_resume", lambda: automatic_resume(fresh_connection=True)),
+        ("lifecycle.gateway_reused_connection", lambda: automatic_resume(fresh_connection=False)),
     ):
         failures = len(validator.failures)
         validator.verify(name, operation)
@@ -302,8 +350,6 @@ def _wait_for_state(sandbox: Sandbox, expected: SandboxState) -> None:
             previous = state.value
         if state is expected:
             return
-        if state is SandboxState.FAILED:
-            raise AssertionError("sandbox entered failed state")
         time.sleep(2)
     raise AssertionError(f"sandbox did not reach {expected.value} within 90s")
 
@@ -320,10 +366,9 @@ def _validate_expiry(client: DevBox, template: TemplateInfo) -> None:
     try:
         _wait_for_state(sandbox, SandboxState.STOPPED)
         _equal(_step("sandbox.is_running() | expect False", sandbox.is_running), False)
-        _step("sandbox.kill() | cleanup is safe even after expiration", sandbox.kill)
     finally:
         try:
-            sandbox.kill()
+            _step("sandbox.kill() | cleanup is safe even after expiration", sandbox.kill)
         finally:
             sandbox.close()
 
@@ -748,8 +793,4 @@ def _seconds(started_at: float) -> str:
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Validate DevBox SDK functionality")
-    parser.add_argument(
-        "--lifecycle-only", action="store_true", help="Run lifecycle scenarios only"
-    )
-    main(lifecycle_only=parser.parse_args().lifecycle_only)
+    main()
