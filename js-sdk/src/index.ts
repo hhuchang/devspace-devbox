@@ -23,6 +23,7 @@ export {
 } from "./errors.js";
 export type { ListFilesOptions, WriteFileOptions } from "./filesystem.js";
 export type { GitCredentials, GitNetworkOptions } from "./git.js";
+export type { EnvdHealth, EnvdMetrics } from "./models.js";
 export {
   type CommandResult,
   type FileInfo,

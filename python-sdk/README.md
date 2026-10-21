@@ -5,14 +5,15 @@
 
 ## 使用模型
 
-日常使用只需要记住一个入口和四组能力：
+日常使用只需要记住一个入口和五组能力：
 
 ```text
 Sandbox
 ├── commands    命令与进程
 ├── files       文件系统
 ├── pty         交互式终端
-└── git         Git 操作
+├── git         Git 操作
+└── envd        运行时信息
 ```
 
 推荐从 `Sandbox.create()` 开始。只有需要复用连接管理多个沙箱时，才使用
@@ -84,6 +85,7 @@ with Sandbox.create("default", timeout=300) as sandbox:
 | `sandbox.files` | `upload`、`download`、`watch` | 本地传输和目录监听 |
 | `sandbox.pty` | `start`、`connect`、`resize` | 交互式终端 |
 | `sandbox.git` | `clone`、`status`、`checkout`、`add`、`commit`、`pull`、`push`、`set_config` | Git 工作流 |
+| `sandbox.envd` | `get_metrics`、`get_envs`、`health` | EnvD 实时指标、环境变量与健康检查 |
 
 沙箱生命周期、命令和 Git 操作中的 `timeout`、`duration` 均以秒为单位。
 Manager 请求默认等待 150 秒，数据面普通 HTTP 请求默认等待 30 秒；显式设置 `request_timeout` 时，两者都使用指定值。命令执行/重连默认 `timeout=60`，
@@ -168,6 +170,20 @@ print(result.stdout)
 PTY 继承沙箱的语言环境，不强制设置镜像可能未安装的 locale；需要覆盖时通过 `envs` 传入。
 `exit` 结束远端终端进程，`disconnect()` 只断开输出流。`wait()` 已返回退出结果后，句柄不再接受输入。
 
+## EnvD 运行时信息
+
+```python
+health = sandbox.envd.health()
+metrics = sandbox.envd.get_metrics()
+envs = sandbox.envd.get_envs()
+
+print(health.envd_version, metrics.cpu_used_pct, envs["DEVBOX_ID"])
+```
+
+`get_metrics()` 返回一次实时采样：CPU 核数与使用率、内存总量/使用量/缓存、磁盘总量/使用量。
+`get_envs()` 返回 EnvD 当前合并后的环境变量。`health()` 直接探测数据面，成功时返回
+`X-Envd-Version`；这些接口与 Manager 的 `get_info()`/`is_running()` 不同，不会查询管理面状态。
+
 ## 管理多个沙箱
 
 `DevBox` 复用一个管理面连接，适合服务端程序或批量操作：
@@ -222,7 +238,8 @@ Manager 的 `connectToken` 是 Relay 连接凭证，`tokenExpiration` 是其 Uni
 `connect()` 获取 Manager 当前保存的连接信息，不保证每次签发新 Token。SDK 在发起数据面请求前，
 会检查凭证有效期并在需要时向 Manager 更新；不运行后台定时续期，也不延长沙箱生命周期。
 
-数据面使用 EnvD 的 `/process.Process/*`、`/filesystem.Filesystem/*` 和 `/files`，
+数据面使用 EnvD 的 `/process.Process/*`、`/filesystem.Filesystem/*`、`/files`、
+`/metrics`、`/envs` 和 `/health`，
 不使用仅供 Orchestrator 调用的 `/envd/*` 控制接口。
 所有数据面请求（包括流式命令和文件传输）均使用 Relay Token Cookie 鉴权，
 不使用 `envdAccessToken` 或 `X-Access-Token`。Manager 未返回有效 `connectToken` 时，SDK 拒绝发起数据面请求。
@@ -256,10 +273,11 @@ except DevBoxError as error:
 
 1. 查询模板列表，显示配置并选择具体 build；`DEVBOX_TEST_TEMPLATE` 支持名称、ID 或别名。
 2. 创建、查询、列表、连接、环境变量，以及命令、流式回调、后台进程、stdin、进程重连与终止。
-3. 文件读写、元数据、二进制传输、目录监听、PTY 和本地 Git 工作流。
-4. 验证 `set_timeout` 可延长和缩短，`refresh` 只延长、不缩短。
-5. 手动 pause/resume、通过 Manager connect 恢复，以及超时暂停后直接访问数据面触发 Gateway 自动唤醒。
-6. 每次恢复核对同一沙箱中的 1 MiB 文件、原后台进程和环境变量；另建短生命周期沙箱验证超时销毁。
+3. EnvD 数据面健康检查、实时资源指标和运行时环境变量。
+4. 文件读写、元数据、二进制传输、目录监听、PTY 和本地 Git 工作流。
+5. 验证 `set_timeout` 可延长和缩短，`refresh` 只延长、不缩短。
+6. 手动 pause/resume、通过 Manager connect 恢复，以及超时暂停后直接访问数据面触发 Gateway 自动唤醒。
+7. 每次恢复核对同一沙箱中的 1 MiB 文件、原后台进程和环境变量；另建短生命周期沙箱验证超时销毁。
 
 ```bash
 python examples/validate_full.py
@@ -267,7 +285,7 @@ python examples/validate_full.py --mode basic
 python examples/validate_full.py --mode lifecycle --rounds 5
 ```
 
-`basic` 验证管理查询、命令、文件、PTY 和 Git；`lifecycle` 验证生命周期；
+`basic` 验证管理查询、EnvD 运行时信息、命令、文件、PTY 和 Git；`lifecycle` 验证生命周期；
 `full` 执行全部。同步与异步最小用法见本文前面的示例。
 
 控制台中的 `DO` 表示 SDK 调用，`STREAM`/`EVENT` 展示实时数据，`CHECK` 展示业务核对，

@@ -1,6 +1,7 @@
 import type { Dispatcher } from "undici";
 import { Commands } from "./commands.js";
 import { type ConnectionConfig, type DevBoxOptions, resolveConfig } from "./config.js";
+import { Envd } from "./envd.js";
 import { ConflictError, NotFoundError, ProtocolError } from "./errors.js";
 import { Filesystem } from "./filesystem.js";
 import { Git } from "./git.js";
@@ -114,6 +115,7 @@ export class Sandbox {
   readonly files: Filesystem;
   readonly pty: Pty;
   readonly git: Git;
+  readonly envd: Envd;
   readonly #control: Transport;
   readonly #context: SandboxContext;
   #info: SandboxInfo;
@@ -134,6 +136,7 @@ export class Sandbox {
     this.files = new Filesystem(() => this.#gatewayTransport());
     this.pty = new Pty(this.commands, () => this.#gatewayTransport());
     this.git = new Git(this.commands);
+    this.envd = new Envd(() => this.#gatewayTransport());
   }
 
   /** @internal */
