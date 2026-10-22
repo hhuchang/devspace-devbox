@@ -218,7 +218,7 @@ export class Sandbox {
     });
   }
 
-  /** Save memory and disk. Manager retains the paused sandbox for 24 hours. */
+  /** Save memory and disk. Paused sandbox records do not expire in Manager. */
   async pause(): Promise<void> {
     await this.#control.request("POST", `/sandboxes/${identifier(this.sandboxId)}/pause`);
     this.#info = { ...this.#info, state: SandboxState.Paused };
