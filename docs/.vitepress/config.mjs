@@ -55,6 +55,7 @@ export default defineConfig({
         text: "参考",
         items: [
           { text: "问题排查", link: "/reference/troubleshooting" },
+          { text: "免责声明", link: "/reference/disclaimer" },
         ],
       },
     ],
