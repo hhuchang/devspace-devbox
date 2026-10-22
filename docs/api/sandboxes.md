@@ -113,7 +113,7 @@ curl --fail-with-body -X POST "$DEVBOX_API_URL/sandboxes/$SANDBOX_ID/pause" \
   -H "X-API-Key: $DEVBOX_API_KEY"
 ```
 
-保存内存与文件状态；HTTP、PTY 和监听连接需要客户端重新建立。当前暂停保留期为 24 小时，暂停期间不消耗本次运行的 timeout。完成前查询仍可能显示 running。其他状态不允许暂停时返回 409。
+保存内存与文件状态；HTTP、PTY 和监听连接需要客户端重新建立。Manager 不自动过期清理暂停记录，暂停期间不消耗本次运行的 timeout；恢复依赖原节点、快照和隧道可用。完成前查询仍可能显示 running。其他状态不允许暂停时返回 409。
 
 ## 恢复沙箱 {#resume}
 
@@ -199,7 +199,7 @@ curl --fail-with-body -X DELETE "$DEVBOX_API_URL/sandboxes/$SANDBOX_ID" \
 | `sandboxID` / `templateID` | string | 沙箱和来源模板 ID |
 | `state` | string | `running` 或 `paused`；销毁后通过 404 表示不可访问 |
 | `startedAt` | string | 本次运行开始时间，恢复后更新 |
-| `endAt` | string | 运行状态为存活截止时间；暂停状态为暂停保留截止时间 |
+| `endAt` | string / null | 运行状态为存活截止时间；暂停状态为 null，不设 Manager 保留截止时间 |
 | `cpuCount` | integer | CPU 核数 |
 | `memoryMB` / `diskSizeMB` | integer | 内存与磁盘规格，单位 MiB |
 | `metadata` | object | 业务标签，可省略 |

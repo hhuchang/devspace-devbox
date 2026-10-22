@@ -340,7 +340,7 @@ class Sandbox:
     def pause(self) -> None:
         """Save memory and disk, then close local runtime connections.
 
-        Manager retains the paused sandbox for 24 hours. Context manager exit
+        Manager does not expire paused sandbox records. Context manager exit
         still deletes it; use ``close()`` to leave it available for resume.
         """
         self._control.request("POST", f"/sandboxes/{_id(self.sandbox_id)}/pause")
