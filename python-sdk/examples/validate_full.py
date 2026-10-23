@@ -389,10 +389,12 @@ def validate_sandbox(client: DevBox, sandbox: Sandbox, validator: Validator) -> 
     validator.verify("manager.connect", lambda: _validate_connect(client, sandbox))
     runtime_ready = validator.verify("runtime.ready", lambda: _validate_runtime(sandbox))
     if runtime_ready is None:
-        print("SKIP commands, filesystem, PTY and Git: runtime gateway is unavailable")
+        print("SKIP EnvD, commands, filesystem, PTY and Git: runtime gateway is unavailable")
         return
 
     validator.verify("runtime.environment", lambda: _validate_environment(sandbox))
+    _section("EnvD runtime", "Probe EnvD and collect realtime metrics and runtime environment")
+    validator.verify("runtime.envd", lambda: _validate_envd_runtime(sandbox))
 
     validate_commands(sandbox, validator)
     validate_filesystem(sandbox, validator)
@@ -491,6 +493,39 @@ def validate_git(sandbox: Sandbox, validator: Validator) -> None:
         "git.remove",
         lambda: _step(f"files.remove({repository!r})", lambda: sandbox.files.remove(repository)),
     )
+
+
+def _validate_envd_runtime(sandbox: Sandbox) -> None:
+    health = _step(
+        "envd.health() | probe the data plane and read the EnvD version", sandbox.envd.health
+    )
+    print(f"    envd_version={health.envd_version!r}", flush=True)
+    _equal(bool(health.envd_version), True)
+
+    metrics = _step(
+        "envd.get_metrics() | collect one realtime CPU, memory and disk sample",
+        sandbox.envd.get_metrics,
+    )
+    print(
+        f"    cpu={metrics.cpu_count}x {metrics.cpu_used_pct:.2f}%"
+        f" | memory={metrics.mem_used}/{metrics.mem_total} bytes"
+        f" | disk={metrics.disk_used}/{metrics.disk_total} bytes",
+        flush=True,
+    )
+    _equal(metrics.cpu_count > 0, True)
+    _equal(0 <= metrics.cpu_used_pct <= 100, True)
+    _equal(0 <= metrics.mem_used <= metrics.mem_total, True)
+    _equal(0 <= metrics.mem_cache <= metrics.mem_total, True)
+    _equal(0 < metrics.disk_used <= metrics.disk_total, True)
+    age = abs((datetime.now(timezone.utc) - metrics.timestamp).total_seconds())
+    if age > 60:
+        raise AssertionError(f"EnvD metric timestamp is {age:.1f}s away from local clock")
+
+    envs = _step("envd.get_envs() | read the merged runtime environment", sandbox.envd.get_envs)
+    print(f"    env_keys={sorted(envs)}", flush=True)
+    _equal(envs.get("DEVBOX_ID"), sandbox.sandbox_id)
+    _equal(envs.get("DEVBOX_TEMPLATE_ID"), sandbox.info.template_id)
+    _equal(envs.get("DEVBOX_SDK_ENV"), "created-731")
 
 
 def _validate_terminal_result(result: CommandResult) -> None:

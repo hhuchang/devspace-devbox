@@ -4,14 +4,15 @@
 
 ## 使用模型
 
-日常使用只需要一个入口和四组能力：
+日常使用只需要一个入口和五组能力：
 
 ```text
 Sandbox
 ├── commands    命令与进程
 ├── files       文件系统
 ├── pty         交互式终端
-└── git         Git 操作
+├── git         Git 操作
+└── envd        运行时信息
 ```
 
 所有网络操作均返回 `Promise`。SDK 自带 TypeScript 类型，不需要额外安装类型包。
@@ -75,6 +76,7 @@ try {
 | `sandbox.files` | `upload`、`download`、`watch` | 本地传输与目录监听 |
 | `sandbox.pty` | `start`、`connect`、`resize` | 交互式终端 |
 | `sandbox.git` | `clone`、`status`、`checkout`、`add`、`commit`、`pull`、`push`、`setConfig` | Git 工作流 |
+| `sandbox.envd` | `getMetrics`、`getEnvs`、`health` | EnvD 实时指标、环境变量与健康检查 |
 
 沙箱生命周期的 `timeout`、`duration` 以秒为单位；命令、Git 和请求配置中的
 `timeoutMs`、`requestTimeoutMs` 以毫秒为单位。
@@ -156,6 +158,20 @@ console.log(result.stdout);
 PTY 继承沙箱的语言环境，不强制设置镜像可能未安装的 locale；需要覆盖时通过 `envs` 传入。
 `exit` 结束远端终端进程，`disconnect()` 只断开输出流。`wait()` 已返回退出结果后，句柄不再接受输入。
 
+## EnvD 运行时信息
+
+```js
+const health = await sandbox.envd.health();
+const metrics = await sandbox.envd.getMetrics();
+const envs = await sandbox.envd.getEnvs();
+
+console.log(health.envdVersion, metrics.cpuUsedPct, envs.DEVBOX_ID);
+```
+
+`getMetrics()` 返回一次实时采样：CPU 核数与使用率、内存总量/使用量/缓存、磁盘总量/使用量。
+`getEnvs()` 返回 EnvD 当前合并后的环境变量。`health()` 直接探测数据面，成功时返回
+`X-Envd-Version`；这些接口与 Manager 的 `getInfo()`/`isRunning()` 不同，不会查询管理面状态。
+
 ## 管理多个沙箱
 
 `DevBox` 复用管理面连接，适合服务端程序和批量操作：
@@ -193,7 +209,8 @@ Manager 的 `connectToken` 是 Relay 连接凭证，`tokenExpiration` 是其 Uni
 `connect()` 获取 Manager 当前保存的连接信息，不保证每次签发新 Token。SDK 在发起数据面请求前，
 会检查凭证有效期并在需要时向 Manager 更新；不运行后台定时续期，也不延长沙箱生命周期。
 
-数据面使用 EnvD 的 `/process.Process/*`、`/filesystem.Filesystem/*` 和 `/files`，
+数据面使用 EnvD 的 `/process.Process/*`、`/filesystem.Filesystem/*`、`/files`、
+`/metrics`、`/envs` 和 `/health`，
 不使用仅供 Orchestrator 调用的 `/envd/*` 控制接口。
 所有数据面请求（包括流式命令和文件传输）均使用 Relay Token Cookie 鉴权，
 不使用 `envdAccessToken` 或 `X-Access-Token`。Manager 未返回有效 `connectToken` 时，SDK 拒绝发起数据面请求。
@@ -230,7 +247,7 @@ npm run validate
 npm run validate -- --mode lifecycle --rounds 5
 ```
 
-`basic` 验证管理查询、命令、文件、PTY 和 Git；`lifecycle` 验证生命周期；
+`basic` 验证管理查询、EnvD 运行时信息、命令、文件、PTY 和 Git；`lifecycle` 验证生命周期；
 默认 `full` 执行全部。最小用法见本文前面的示例。
 `--rounds` 串行重复所选流程，输出每项失败数和 min/avg/max 耗时。
 创建或清理失败后停止新增资源，不以重试覆盖失败。
@@ -238,7 +255,7 @@ npm run validate -- --mode lifecycle --rounds 5
 完整验收顺序与 Python 一致：
 
 1. 列出模板并按名称、ID 或别名选择具体 build，创建、查询、列表和连接沙箱。
-2. 验证环境变量、命令 stdout/stderr、流式回调、后台进程、stdin、重连和终止。
+2. 验证环境变量、EnvD 健康检查/实时指标/运行时环境变量、命令 stdout/stderr、流式回调、后台进程、stdin、重连和终止。
 3. 验证文件读写、元数据、二进制传输、目录监听、PTY 和本地 Git 工作流。
 4. 验证 `setTimeout` 延长与缩短、`refresh` 只延长，以及 pause/resume、Manager connect 恢复和 Gateway 自动唤醒。
 5. 每次恢复后核对 1 MiB 文件、原进程和环境变量，另建短生命周期沙箱验证超时销毁，最后清理。

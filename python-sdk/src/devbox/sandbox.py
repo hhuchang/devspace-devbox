@@ -12,6 +12,7 @@ from ._transport import AsyncTransport, SyncTransport
 from .commands import AsyncCommands, Commands
 from .config import ConnectionConfig, gateway_verify_tls
 from .errors import ConflictError, DevBoxError, NotFoundError, ProtocolError
+from .envd import AsyncEnvd, Envd
 from .filesystem import AsyncFilesystem, Filesystem
 from .git import AsyncGit, Git
 from .models import (
@@ -200,6 +201,7 @@ class Sandbox:
     files: Filesystem
     pty: Pty
     git: Git
+    envd: Envd
 
     def __init__(
         self,
@@ -222,6 +224,7 @@ class Sandbox:
         self.files = Filesystem(self._gateway_transport)
         self.pty = Pty(self.commands, self._gateway_transport)
         self.git = Git(self.commands)
+        self.envd = Envd(self._gateway_transport)
 
     @classmethod
     def create(
@@ -437,6 +440,7 @@ class AsyncSandbox:
     files: AsyncFilesystem
     pty: AsyncPty
     git: AsyncGit
+    envd: AsyncEnvd
 
     def __init__(
         self,
@@ -459,6 +463,7 @@ class AsyncSandbox:
         self.files = AsyncFilesystem(self._gateway_transport)
         self.pty = AsyncPty(self.commands, self._gateway_transport)
         self.git = AsyncGit(self.commands)
+        self.envd = AsyncEnvd(self._gateway_transport)
 
     @classmethod
     async def create(

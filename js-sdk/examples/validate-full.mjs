@@ -211,7 +211,7 @@ async function validateSandbox(client, sandbox, validator) {
   });
   const runtime = await validator.verify("runtime.ready", () => waitForRuntime(sandbox));
   if (!runtime) {
-    console.log("SKIP commands, filesystem, PTY and Git: runtime gateway is unavailable");
+    console.log("SKIP EnvD, commands, filesystem, PTY and Git: runtime gateway is unavailable");
   } else {
     await validator.verify("runtime.environment", async () => {
       const command = 'printf "%s|%s" "$DEVBOX_ID" "$DEVBOX_SDK_ENV"';
@@ -221,6 +221,41 @@ async function validateSandbox(client, sandbox, validator) {
       );
       equal(result.stdout, `${sandbox.sandboxId}|created-731`);
       equal(result.stderr, "");
+    });
+    section("EnvD runtime", "Probe EnvD and collect realtime metrics and runtime environment");
+    await validator.verify("runtime.envd", async () => {
+      const health = await step(
+        "envd.health() | probe the data plane and read the EnvD version",
+        () => sandbox.envd.health(),
+      );
+      console.log(`    envdVersion=${JSON.stringify(health.envdVersion)}`);
+      equal(Boolean(health.envdVersion), true);
+
+      const metrics = await step(
+        "envd.getMetrics() | collect one realtime CPU, memory and disk sample",
+        () => sandbox.envd.getMetrics(),
+      );
+      console.log(
+        `    cpu=${metrics.cpuCount}x ${metrics.cpuUsedPct.toFixed(2)}%` +
+          ` | memory=${metrics.memUsed}/${metrics.memTotal} bytes` +
+          ` | disk=${metrics.diskUsed}/${metrics.diskTotal} bytes`,
+      );
+      equal(metrics.cpuCount > 0, true);
+      equal(metrics.cpuUsedPct >= 0 && metrics.cpuUsedPct <= 100, true);
+      equal(metrics.memUsed >= 0 && metrics.memUsed <= metrics.memTotal, true);
+      equal(metrics.memCache >= 0 && metrics.memCache <= metrics.memTotal, true);
+      equal(metrics.diskUsed > 0 && metrics.diskUsed <= metrics.diskTotal, true);
+      const age = Math.abs(Date.now() - metrics.timestamp.getTime()) / 1000;
+      if (age > 60)
+        throw new Error(`EnvD metric timestamp is ${age.toFixed(1)}s away from local clock`);
+
+      const envs = await step("envd.getEnvs() | read the merged runtime environment", () =>
+        sandbox.envd.getEnvs(),
+      );
+      console.log(`    envKeys=${JSON.stringify(Object.keys(envs).sort())}`);
+      equal(envs.DEVBOX_ID, sandbox.sandboxId);
+      equal(envs.DEVBOX_TEMPLATE_ID, sandbox.info.templateId);
+      equal(envs.DEVBOX_SDK_ENV, "created-731");
     });
     await validateRuntime(sandbox, validator);
   }

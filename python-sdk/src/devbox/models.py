@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -165,6 +166,39 @@ class PtySize:
 
 
 @dataclass(frozen=True, slots=True)
+class EnvdHealth:
+    envd_version: str
+
+
+@dataclass(frozen=True, slots=True)
+class EnvdMetrics:
+    timestamp: datetime
+    cpu_count: int
+    cpu_used_pct: float
+    mem_total: int
+    mem_used: int
+    mem_cache: int
+    disk_total: int
+    disk_used: int
+
+    @classmethod
+    def from_wire(cls, value: Mapping[str, Any]) -> EnvdMetrics:
+        timestamp = parse_optional_datetime(_pick(value, "ts"))
+        if timestamp is None:
+            raise ProtocolError("EnvD metrics response field is missing: ts")
+        return cls(
+            timestamp=timestamp,
+            cpu_count=_integer(_pick(value, "cpu_count")),
+            cpu_used_pct=_number(_pick(value, "cpu_used_pct")),
+            mem_total=_integer(_pick(value, "mem_total")),
+            mem_used=_integer(_pick(value, "mem_used")),
+            mem_cache=_integer(_pick(value, "mem_cache")),
+            disk_total=_integer(_pick(value, "disk_total")),
+            disk_used=_integer(_pick(value, "disk_used")),
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class FileInfo:
     name: str
     path: str
@@ -294,6 +328,25 @@ def _integer(value: object) -> int:
         except ValueError as error:
             raise ProtocolError("DevBox response value is not an integer") from error
     raise ProtocolError("DevBox response value is not an integer")
+
+
+def _number(value: object) -> float:
+    if isinstance(value, bool):
+        value = int(value)
+    if isinstance(value, int | float):
+        try:
+            number = float(value)
+        except OverflowError as error:
+            raise ProtocolError("DevBox response value is not a number") from error
+        if not math.isfinite(number):
+            raise ProtocolError("DevBox response value is not a finite number")
+        return number
+    if isinstance(value, str | bytes | bytearray):
+        try:
+            return float(value)
+        except (OverflowError, ValueError) as error:
+            raise ProtocolError("DevBox response value is not a number") from error
+    raise ProtocolError("DevBox response value is not a number")
 
 
 E = TypeVar("E", bound=Enum)

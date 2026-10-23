@@ -7,6 +7,7 @@ application needs to manage several sandboxes through one reusable client.
 from ._version import __version__
 from .client import AsyncDevBox, DevBox
 from .commands import AsyncCommandHandle, CommandHandle
+from .envd import AsyncEnvd, Envd
 from .errors import (
     AuthenticationError,
     CommandExitError,
@@ -25,6 +26,8 @@ from .errors import (
 from .git import GitCredentials
 from .models import (
     CommandResult,
+    EnvdHealth,
+    EnvdMetrics,
     FileInfo,
     FileType,
     FileWatchEvent,
@@ -41,6 +44,7 @@ from .sandbox import AsyncSandbox, Sandbox
 __all__ = [
     "AsyncCommandHandle",
     "AsyncDevBox",
+    "AsyncEnvd",
     "AsyncSandbox",
     "AuthenticationError",
     "CommandExitError",
@@ -51,6 +55,9 @@ __all__ = [
     "DevBox",
     "DevBoxError",
     "ErrorDetail",
+    "Envd",
+    "EnvdHealth",
+    "EnvdMetrics",
     "FileInfo",
     "FileType",
     "FileWatchEvent",

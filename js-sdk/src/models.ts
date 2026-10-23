@@ -1,5 +1,6 @@
 import { ProtocolError } from "./errors.js";
 import {
+  dateValue,
   numberValue,
   objectValue,
   optionalDate,
@@ -87,6 +88,21 @@ export interface CommandResult {
 export interface PtySize {
   rows: number;
   cols: number;
+}
+
+export interface EnvdHealth {
+  envdVersion: string;
+}
+
+export interface EnvdMetrics {
+  timestamp: Date;
+  cpuCount: number;
+  cpuUsedPct: number;
+  memTotal: number;
+  memUsed: number;
+  memCache: number;
+  diskTotal: number;
+  diskUsed: number;
 }
 
 export interface FileInfo {
@@ -210,5 +226,18 @@ export function parseFileInfo(value: WireObject): FileInfo {
     group: optionalString(value.group),
     modifiedAt: optionalDate(pickOr(value, undefined, "modifiedTime", "modifiedAt", "modified_at")),
     symlinkTarget: optionalString(pickOr(value, undefined, "symlinkTarget", "symlink_target")),
+  };
+}
+
+export function parseEnvdMetrics(value: WireObject): EnvdMetrics {
+  return {
+    timestamp: dateValue(pick(value, "ts")),
+    cpuCount: numberValue(pick(value, "cpu_count")),
+    cpuUsedPct: numberValue(pick(value, "cpu_used_pct")),
+    memTotal: numberValue(pick(value, "mem_total")),
+    memUsed: numberValue(pick(value, "mem_used")),
+    memCache: numberValue(pick(value, "mem_cache")),
+    diskTotal: numberValue(pick(value, "disk_total")),
+    diskUsed: numberValue(pick(value, "disk_used")),
   };
 }
